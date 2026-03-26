@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+*.egg-info/
+dist/
+build/
+
+# Node
+node_modules/
+frontend/node_modules/
+.next/
+out/
+
+# Environment
+.env
+.env.local
+.env.production
+backend/.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# TigerGraph
+*.tar.gz
+
+# Data (raw files can be large)
+data/raw/
+
+# Build outputs
+frontend/dist/
+frontend/build/
+
+# Misc
+*.log
+.claude/
+.md
