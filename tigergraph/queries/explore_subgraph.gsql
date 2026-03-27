@@ -1,0 +1,60 @@
+// Query 6: Graph Explorer — Subgraph Sampling
+// Returns a sample of the knowledge graph for visualization
+// Supports filtering by vertex type and hop depth
+
+CREATE QUERY explore_subgraph(
+  STRING center_type,
+  STRING center_id,
+  INT max_hops,
+  INT limit_per_hop
+) FOR GRAPH MedGraph {
+  OrAccum @visited;
+  SetAccum<EDGE> @@all_edges;
+
+  // Start from the specified center vertex
+  IF center_type == "Disease" THEN
+    start = {Disease.*};
+    start = SELECT s FROM start:s WHERE s.disease_id == center_id LIMIT 1;
+  ELSE IF center_type == "Drug" THEN
+    start = {Drug.*};
+    start = SELECT s FROM start:s WHERE s.drug_id == center_id LIMIT 1;
+  ELSE IF center_type == "Symptom" THEN
+    start = {Symptom.*};
+    start = SELECT s FROM start:s WHERE s.symptom_id == center_id LIMIT 1;
+  ELSE IF center_type == "Gene" THEN
+    start = {Gene.*};
+    start = SELECT s FROM start:s WHERE s.gene_id == center_id LIMIT 1;
+  ELSE
+    // Default: random sample of diseases
+    start = {Disease.*};
+    start = SELECT s FROM start:s ORDER BY RAND() LIMIT 5;
+  END;
+
+  start = SELECT s FROM start:s ACCUM s.@visited = TRUE;
+
+  frontier = start;
+  INT hop = 0;
+  WHILE frontier.size() > 0 AND hop < max_hops LIMIT 5 DO
+    frontier = SELECT t FROM frontier:s -(:e)- :t
+               WHERE t.@visited == FALSE
+               ACCUM
+                 @@all_edges += e,
+                 t.@visited = TRUE
+               LIMIT limit_per_hop;
+    hop = hop + 1;
+  END;
+
+  // Collect all visited vertices
+  all_diseases  = SELECT s FROM {Disease.*}:s  WHERE s.@visited == TRUE;
+  all_symptoms  = SELECT s FROM {Symptom.*}:s  WHERE s.@visited == TRUE;
+  all_drugs     = SELECT s FROM {Drug.*}:s     WHERE s.@visited == TRUE;
+  all_effects   = SELECT s FROM {SideEffect.*}:s WHERE s.@visited == TRUE;
+  all_genes     = SELECT s FROM {Gene.*}:s     WHERE s.@visited == TRUE;
+
+  PRINT all_diseases [all_diseases.disease_id, all_diseases.name, all_diseases.severity, all_diseases.category];
+  PRINT all_symptoms [all_symptoms.symptom_id, all_symptoms.name, all_symptoms.body_system];
+  PRINT all_drugs    [all_drugs.drug_id, all_drugs.name, all_drugs.drug_class];
+  PRINT all_effects  [all_effects.effect_id, all_effects.name, all_effects.severity];
+  PRINT all_genes    [all_genes.gene_id, all_genes.name, all_genes.chromosome];
+  PRINT @@all_edges;
+}

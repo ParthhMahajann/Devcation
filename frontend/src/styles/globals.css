@@ -1,0 +1,22 @@
+@import "tailwindcss";
+
+:root {
+  --color-primary: #0ea5e9;
+  --color-secondary: #8b5cf6;
+  --color-danger: #ef4444;
+  --color-success: #22c55e;
+  --color-warning: #f59e0b;
+}
+
+/* Node type colors for graph */
+.node-disease    { fill: #ef4444; }
+.node-symptom    { fill: #f59e0b; }
+.node-drug       { fill: #0ea5e9; }
+.node-side-effect{ fill: #8b5cf6; }
+.node-gene       { fill: #22c55e; }
+.node-patient    { fill: #ec4899; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: #1e293b; }
+::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }

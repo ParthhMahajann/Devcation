@@ -1,0 +1,41 @@
+// Query 3: Treatment Pathway Explorer
+// BFS from a disease to find all treating drugs and their side effects
+// Returns a subgraph for visualization
+
+CREATE QUERY find_treatment_path(VERTEX<Disease> source_disease) FOR GRAPH MedGraph {
+  OrAccum @visited;
+  ListAccum<STRING> @path;
+
+  start = {source_disease};
+  start = SELECT s FROM start:s
+          ACCUM s.@visited = TRUE, s.@path += s.name;
+
+  // Hop 1: Disease → Drugs that treat it
+  drugs = SELECT dr FROM start:d -(TREATS:e)- Drug:dr
+          WHERE dr.@visited == FALSE
+          ACCUM
+            dr.@visited = TRUE,
+            dr.@path += d.@path,
+            dr.@path += "TREATS:" + dr.name;
+
+  // Hop 2: Drugs → Side Effects
+  side_effects = SELECT se FROM drugs:dr -(CAUSES_SIDE_EFFECT:e)- SideEffect:se
+                 WHERE se.@visited == FALSE
+                 ACCUM
+                   se.@visited = TRUE,
+                   se.@path += dr.@path,
+                   se.@path += "SIDE_EFFECT:" + se.name;
+
+  // Hop 3: Drugs → Genes they target
+  genes = SELECT g FROM drugs:dr -(TARGETS_GENE:e)- Gene:g
+          WHERE g.@visited == FALSE
+          ACCUM
+            g.@visited = TRUE,
+            g.@path += dr.@path,
+            g.@path += "TARGETS:" + g.name;
+
+  PRINT start [start.disease_id, start.name, start.severity, start.@path];
+  PRINT drugs [drugs.drug_id, drugs.name, drugs.drug_class, drugs.@path];
+  PRINT side_effects [side_effects.effect_id, side_effects.name, side_effects.severity, side_effects.@path];
+  PRINT genes [genes.gene_id, genes.name, genes.chromosome, genes.@path];
+}

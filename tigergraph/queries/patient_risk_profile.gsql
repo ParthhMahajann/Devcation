@@ -1,0 +1,42 @@
+// Query 4: Patient Risk Assessment
+// Aggregates diagnoses, medications, interactions, and genetic risk factors
+// Returns a comprehensive risk profile for a patient
+
+CREATE QUERY patient_risk_profile(VERTEX<Patient> p) FOR GRAPH MedGraph {
+  SumAccum<FLOAT> @risk_score;
+  SetAccum<STRING> @risk_factors;
+  SetAccum<STRING> @interacting_pair;
+
+  patient = {p};
+
+  // Get patient's diagnosed diseases
+  diseases = SELECT d FROM patient:s -(DIAGNOSED_WITH:e)-> Disease:d
+             ACCUM
+               d.@risk_score += CASE WHEN d.severity == "critical" THEN 10.0
+                                     WHEN d.severity == "severe"   THEN 7.0
+                                     WHEN d.severity == "moderate" THEN 4.0
+                                     ELSE 1.0 END;
+
+  // Get patient's current medications
+  drugs = SELECT dr FROM patient:s -(TAKES_DRUG:e)-> Drug:dr;
+
+  // Check interactions between patient's medications
+  interactions = SELECT t FROM drugs:s -(INTERACTS_WITH:e)- Drug:t
+                 WHERE t IN drugs AND t != s
+                 ACCUM
+                   t.@risk_score += CASE WHEN e.severity == "dangerous" THEN 10.0
+                                         WHEN e.severity == "moderate"  THEN 5.0
+                                         ELSE 1.0 END,
+                   t.@risk_factors += s.name + " <-> " + t.name + " [" + e.severity + "]";
+
+  // Find genes associated with patient's diseases (high confidence)
+  genes = SELECT g FROM diseases:d <-(ASSOCIATED_WITH:e)- Gene:g
+          WHERE e.evidence_strength > 0.7
+          ACCUM g.@risk_factors += "Genetic risk via " + d.name;
+
+  PRINT patient [p.patient_id, p.name, p.age, p.gender, p.blood_type];
+  PRINT diseases [diseases.disease_id, diseases.name, diseases.severity, diseases.@risk_score];
+  PRINT drugs [drugs.drug_id, drugs.name, drugs.drug_class];
+  PRINT interactions [interactions.drug_id, interactions.name, interactions.@risk_score, interactions.@risk_factors];
+  PRINT genes [genes.gene_id, genes.name, genes.chromosome, genes.@risk_factors];
+}

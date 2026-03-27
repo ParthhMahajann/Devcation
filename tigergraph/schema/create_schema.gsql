@@ -1,0 +1,110 @@
+// MedGraph AI — TigerGraph Schema
+// Healthcare Knowledge Graph
+
+// ─── Drop existing graph (idempotent) ───────────────────────────────────────
+// USE GLOBAL
+
+// ─── Vertex Types ────────────────────────────────────────────────────────────
+CREATE VERTEX Disease (
+  PRIMARY_ID disease_id STRING,
+  name STRING,
+  icd_code STRING,
+  severity STRING,
+  description STRING,
+  category STRING
+) WITH STATS="OUTDEGREE_BY_EDGETYPE", PRIMARY_ID_AS_ATTRIBUTE="true"
+
+CREATE VERTEX Symptom (
+  PRIMARY_ID symptom_id STRING,
+  name STRING,
+  body_system STRING,
+  severity_weight FLOAT
+) WITH STATS="OUTDEGREE_BY_EDGETYPE", PRIMARY_ID_AS_ATTRIBUTE="true"
+
+CREATE VERTEX Drug (
+  PRIMARY_ID drug_id STRING,
+  name STRING,
+  drug_class STRING,
+  approval_status STRING,
+  generic_name STRING
+) WITH STATS="OUTDEGREE_BY_EDGETYPE", PRIMARY_ID_AS_ATTRIBUTE="true"
+
+CREATE VERTEX SideEffect (
+  PRIMARY_ID effect_id STRING,
+  name STRING,
+  severity STRING
+) WITH STATS="OUTDEGREE_BY_EDGETYPE", PRIMARY_ID_AS_ATTRIBUTE="true"
+
+CREATE VERTEX Gene (
+  PRIMARY_ID gene_id STRING,
+  name STRING,
+  chromosome STRING,
+  function_desc STRING
+) WITH STATS="OUTDEGREE_BY_EDGETYPE", PRIMARY_ID_AS_ATTRIBUTE="true"
+
+CREATE VERTEX Patient (
+  PRIMARY_ID patient_id STRING,
+  name STRING,
+  age INT,
+  gender STRING,
+  blood_type STRING
+) WITH STATS="OUTDEGREE_BY_EDGETYPE", PRIMARY_ID_AS_ATTRIBUTE="true"
+
+// ─── Edge Types ───────────────────────────────────────────────────────────────
+CREATE UNDIRECTED EDGE HAS_SYMPTOM (
+  FROM Disease, TO Symptom,
+  frequency STRING,
+  weight FLOAT
+)
+
+CREATE DIRECTED EDGE TREATS (
+  FROM Drug, TO Disease,
+  efficacy_score FLOAT,
+  evidence_level STRING
+)
+
+CREATE DIRECTED EDGE CAUSES_SIDE_EFFECT (
+  FROM Drug, TO SideEffect,
+  probability FLOAT
+)
+
+CREATE UNDIRECTED EDGE INTERACTS_WITH (
+  FROM Drug, TO Drug,
+  interaction_type STRING,
+  severity STRING
+)
+
+CREATE DIRECTED EDGE TARGETS_GENE (
+  FROM Drug, TO Gene,
+  mechanism STRING
+)
+
+CREATE DIRECTED EDGE ASSOCIATED_WITH (
+  FROM Gene, TO Disease,
+  evidence_strength FLOAT
+)
+
+CREATE DIRECTED EDGE DIAGNOSED_WITH (
+  FROM Patient, TO Disease,
+  diagnosis_date DATETIME,
+  status STRING
+)
+
+CREATE DIRECTED EDGE TAKES_DRUG (
+  FROM Patient, TO Drug,
+  dosage STRING,
+  start_date DATETIME
+)
+
+CREATE UNDIRECTED EDGE SYMPTOM_OVERLAP (
+  FROM Symptom, TO Symptom,
+  correlation_score FLOAT
+)
+
+// ─── Graph ────────────────────────────────────────────────────────────────────
+CREATE GRAPH MedGraph (
+  Disease, Symptom, Drug, SideEffect, Gene, Patient,
+  HAS_SYMPTOM, TREATS, CAUSES_SIDE_EFFECT, INTERACTS_WITH,
+  TARGETS_GENE, ASSOCIATED_WITH, DIAGNOSED_WITH, TAKES_DRUG,
+  SYMPTOM_OVERLAP
+)

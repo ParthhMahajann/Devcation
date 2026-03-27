@@ -1,0 +1,35 @@
+// Query 2: Drug-Drug Interaction Checker
+// N-hop traversal across INTERACTS_WITH edges
+// Returns interaction edges with severity classification
+
+CREATE QUERY check_drug_interactions(SET<STRING> drug_names) FOR GRAPH MedGraph {
+  SetAccum<EDGE> @@interaction_edges;
+  SetAccum<STRING> @@involved_drug_ids;
+
+  drugs = {Drug.*};
+
+  // Find the input drugs
+  input_drugs = SELECT d FROM drugs:d
+                WHERE d.name IN drug_names;
+
+  // Find all pairwise interactions among the input drugs
+  interactions = SELECT t FROM input_drugs:s -(INTERACTS_WITH:e)- Drug:t
+                 WHERE t.name IN drug_names AND t != s
+                 ACCUM
+                   @@interaction_edges += e,
+                   @@involved_drug_ids += s.drug_id,
+                   @@involved_drug_ids += t.drug_id;
+
+  // Return all input drugs (for graph display) + interaction edges
+  all_drugs = SELECT d FROM drugs:d
+              WHERE d.name IN drug_names;
+
+  PRINT all_drugs [
+    all_drugs.drug_id,
+    all_drugs.name,
+    all_drugs.drug_class,
+    all_drugs.approval_status,
+    all_drugs.generic_name
+  ];
+  PRINT @@interaction_edges;
+}

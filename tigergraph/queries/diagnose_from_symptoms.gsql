@@ -1,0 +1,36 @@
+// Query 1: Symptom-Based Differential Diagnosis
+// Multi-hop weighted traversal: Symptoms → Diseases
+// Returns ranked list of diseases with confidence scores
+
+CREATE QUERY diagnose_from_symptoms(SET<STRING> input_symptoms) FOR GRAPH MedGraph {
+  SumAccum<FLOAT> @score;
+  SumAccum<INT> @match_count;
+  MapAccum<STRING, FLOAT> @matched_symptoms;
+
+  symptoms = {Symptom.*};
+
+  // Find matching symptom vertices
+  matched = SELECT s FROM symptoms:s
+            WHERE s.name IN input_symptoms;
+
+  // Traverse HAS_SYMPTOM edges to find diseases, accumulate scores
+  diseases = SELECT d FROM matched:s -(HAS_SYMPTOM:e)- Disease:d
+             ACCUM
+               d.@score += e.weight * s.severity_weight,
+               d.@match_count += 1,
+               d.@matched_symptoms += (s.name -> e.weight)
+             ORDER BY d.@score DESC
+             LIMIT 10;
+
+  PRINT diseases [
+    diseases.disease_id,
+    diseases.name,
+    diseases.icd_code,
+    diseases.severity,
+    diseases.category,
+    diseases.description,
+    diseases.@score,
+    diseases.@match_count,
+    diseases.@matched_symptoms
+  ];
+}

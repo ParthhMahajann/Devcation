@@ -1,0 +1,29 @@
+// Query 5: Graph Statistics
+// Returns vertex and edge counts for the dashboard
+
+CREATE QUERY get_graph_stats() FOR GRAPH MedGraph {
+  SumAccum<INT> @@disease_count;
+  SumAccum<INT> @@symptom_count;
+  SumAccum<INT> @@drug_count;
+  SumAccum<INT> @@side_effect_count;
+  SumAccum<INT> @@gene_count;
+  SumAccum<INT> @@patient_count;
+  SumAccum<INT> @@edge_count;
+
+  diseases  = {Disease.*};
+  symptoms  = {Symptom.*};
+  drugs     = {Drug.*};
+  effects   = {SideEffect.*};
+  genes     = {Gene.*};
+  patients  = {Patient.*};
+
+  tmp = SELECT s FROM diseases:s  ACCUM @@disease_count += 1;
+  tmp = SELECT s FROM symptoms:s  ACCUM @@symptom_count += 1;
+  tmp = SELECT s FROM drugs:s     ACCUM @@drug_count += 1;
+  tmp = SELECT s FROM effects:s   ACCUM @@side_effect_count += 1;
+  tmp = SELECT s FROM genes:s     ACCUM @@gene_count += 1;
+  tmp = SELECT s FROM patients:s  ACCUM @@patient_count += 1;
+
+  PRINT @@disease_count, @@symptom_count, @@drug_count,
+        @@side_effect_count, @@gene_count, @@patient_count;
+}
