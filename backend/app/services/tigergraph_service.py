@@ -121,6 +121,62 @@ class TigerGraphService:
             logger.error(f"explore_subgraph query failed: {e}")
             return {"nodes": [], "edges": []}
 
+    # ─── Pharmacogenomics ────────────────────────────────────────────────────────
+
+    def pharmacogenomics_report(self, patient_id: str) -> dict:
+        if not self.conn:
+            return {}
+        try:
+            return self.conn.runInstalledQuery(
+                "pharmacogenomics_report",
+                {"p": patient_id}
+            )
+        except Exception as e:
+            logger.error(f"pharmacogenomics_report query failed: {e}")
+            return {}
+
+    # ─── Disease Progression ─────────────────────────────────────────────────────
+
+    def disease_progression_risk(self, patient_id: str, max_depth: int = 3) -> dict:
+        if not self.conn:
+            return {}
+        try:
+            return self.conn.runInstalledQuery(
+                "disease_progression_risk",
+                {"p": patient_id, "max_depth": max_depth}
+            )
+        except Exception as e:
+            logger.error(f"disease_progression_risk query failed: {e}")
+            return {}
+
+    # ─── Comorbidity Cluster ─────────────────────────────────────────────────────
+
+    def comorbidity_cluster(self, disease_id: str, max_hops: int = 2, min_rate: float = 0.1) -> dict:
+        if not self.conn:
+            return {}
+        try:
+            return self.conn.runInstalledQuery(
+                "comorbidity_cluster",
+                {"seed_disease": disease_id, "max_hops": max_hops, "min_rate": min_rate}
+            )
+        except Exception as e:
+            logger.error(f"comorbidity_cluster query failed: {e}")
+            return {}
+
+    # ─── Contraindication Safety Check ───────────────────────────────────────────
+
+    def contraindication_safety_check(self, patient_id: str, proposed_drugs: list[str]) -> dict:
+        if not self.conn:
+            return {}
+        try:
+            return self.conn.runInstalledQuery(
+                "contraindication_safety_check",
+                {"p": patient_id, "proposed_drug_names": proposed_drugs}
+            )
+        except Exception as e:
+            logger.error(f"contraindication_safety_check query failed: {e}")
+            return {}
+
     # ─── List helpers ───────────────────────────────────────────────────────────
 
     def list_symptoms(self) -> list:
@@ -195,6 +251,18 @@ class TigerGraphService:
             "@@side_effect_count": 1784,
             "@@gene_count": 512,
             "@@patient_count": 100,
+            "@@body_system_count": 13,
+            "@@medical_test_count": 284,
+            "@@biomarker_count": 196,
+            "@@risk_factor_count": 87,
+            "@@pathway_count": 342,
+            "@@drug_class_count": 48,
+            "@@procedure_count": 213,
+            "@@has_symptom_count": 48291,
+            "@@treats_count": 9814,
+            "@@interacts_count": 4203,
+            "@@associated_count": 2917,
+            "@@comorbid_count": 3156,
         }
 
     def _mock_symptoms(self):

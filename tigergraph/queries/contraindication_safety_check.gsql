@@ -1,0 +1,151 @@
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  Query 10: Pre-Prescription Safety Check  (NEW)                        ║
+// ║  Before prescribing to a patient, checks:                              ║
+// ║    1. Drug-disease contraindications vs. patient's active conditions   ║
+// ║    2. Patient's known drug allergies                                   ║
+// ║    3. Drug-drug interactions with existing medications                 ║
+// ║    4. Black-box warnings + pregnancy category                          ║
+// ║  Returns severity-ordered alert list                                   ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+
+CREATE QUERY contraindication_safety_check(
+  VERTEX<Patient> p,
+  SET<STRING>     proposed_drug_names   // drugs being considered for prescription
+) FOR GRAPH MedGraph {
+
+  // ── Accumulators ──────────────────────────────────────────────────────────
+  SetAccum<STRING>     @alerts;         // per vertex
+
+  // Global alert lists ordered by severity
+  ListAccum<STRING>    @@critical_alerts;   // must block prescription
+  ListAccum<STRING>    @@major_alerts;      // strong warning
+  ListAccum<STRING>    @@moderate_alerts;   // caution
+  ListAccum<STRING>    @@info_alerts;       // informational
+
+  SumAccum<INT>        @@critical_count;
+  SumAccum<INT>        @@major_count;
+
+  patient = {p};
+
+  // ── Retrieve proposed drugs ───────────────────────────────────────────────
+  all_drugs = {Drug.*};
+
+  proposed = SELECT d FROM all_drugs:d WHERE d.name IN proposed_drug_names;
+
+  // ── Check 1: Black-box warnings on proposed drugs ─────────────────────────
+  bbw = SELECT d FROM proposed:d
+        WHERE d.black_box_warning == TRUE
+        ACCUM
+          @@major_alerts += ("⚠ BLACK BOX WARNING: " + d.name + " — requires close monitoring"),
+          @@major_count  += 1;
+
+  // ── Check 2: Pregnancy category warnings ─────────────────────────────────
+  IF p.gender == "female" THEN
+    preg_risk = SELECT d FROM proposed:d
+                WHERE d.pregnancy_category == "D" OR d.pregnancy_category == "X"
+                ACCUM
+                  IF d.pregnancy_category == "X" THEN
+                    @@critical_alerts += ("🚫 PREGNANCY CONTRAINDICATION: " + d.name +
+                                         " is Category X — absolutely contraindicated in pregnancy"),
+                    @@critical_count  += 1
+                  ELSE
+                    @@major_alerts += ("⚠ PREGNANCY RISK: " + d.name +
+                                      " is Category D — evidence of human fetal risk")
+                  END;
+  END;
+
+  // ── Check 3: Patient's existing medications ───────────────────────────────
+  current_drugs = SELECT dr FROM patient:s -(TAKES_DRUG:e)-> Drug:dr;
+
+  // ── Check 4: Drug-drug interactions with existing medications ─────────────
+  interactions = SELECT t
+                 FROM proposed:s -(INTERACTS_WITH:e)- Drug:t
+                 WHERE t IN current_drugs
+                 ACCUM
+                   s.@alerts += ("Interacts with current drug " + t.name +
+                                 " [" + e.severity + "]: " + e.clinical_effect),
+                   IF e.severity == "dangerous" THEN
+                     @@critical_alerts += ("🚫 DANGEROUS INTERACTION: " + s.name +
+                                          " + " + t.name + " — " + e.clinical_effect +
+                                          " [Mechanism: " + e.mechanism + "]"),
+                     @@critical_count  += 1
+                   ELSE IF e.severity == "major" THEN
+                     @@major_alerts += ("⚠ MAJOR INTERACTION: " + s.name +
+                                       " + " + t.name + " — " + e.clinical_effect),
+                     @@major_count   += 1
+                   ELSE IF e.severity == "moderate" THEN
+                     @@moderate_alerts += ("⚡ MODERATE INTERACTION: " + s.name +
+                                          " + " + t.name + " — " + e.clinical_effect)
+                   ELSE
+                     @@info_alerts += ("ℹ MINOR INTERACTION: " + s.name + " + " + t.name)
+                   END;
+
+  // ── Check 5: Patient's known allergies ────────────────────────────────────
+  allergy_hits = SELECT d
+                 FROM patient:s -(ALLERGIC_TO:e)-> Drug:d
+                 WHERE d IN proposed
+                 ACCUM
+                   d.@alerts += ("⚠ KNOWN ALLERGY [" + e.reaction_type + "/" + e.severity + "]"),
+                   IF e.reaction_type == "anaphylaxis" THEN
+                     @@critical_alerts += ("🚫 ALLERGY — ANAPHYLAXIS RISK: Patient is allergic to " +
+                                          d.name + " — DO NOT PRESCRIBE"),
+                     @@critical_count  += 1
+                   ELSE
+                     @@major_alerts += ("⚠ ALLERGY: Patient has " + e.severity +
+                                       " allergic reaction [" + e.reaction_type + "] to " + d.name),
+                     @@major_count   += 1
+                   END;
+
+  // ── Check 6: Contraindications vs. active patient diseases ────────────────
+  patient_diseases = SELECT dis
+                     FROM patient:s -(DIAGNOSED_WITH:e)-> Disease:dis
+                     WHERE e.status == "active" OR e.status == "chronic";
+
+  contras = SELECT dis
+            FROM proposed:d -(CONTRAINDICATED_IN:e)-> Disease:dis
+            WHERE dis IN patient_diseases
+            ACCUM
+              d.@alerts += ("Contraindicated in active condition: " + dis.name +
+                            " [" + e.severity + "] " + e.reason),
+              IF e.severity == "absolute" THEN
+                @@critical_alerts += ("🚫 ABSOLUTE CONTRAINDICATION: " + d.name +
+                                      " is absolutely contraindicated in " + dis.name +
+                                      " — " + e.reason),
+                @@critical_count  += 1
+              ELSE
+                @@moderate_alerts += ("⚡ RELATIVE CONTRAINDICATION: " + d.name +
+                                      " in " + dis.name + " — " + e.reason)
+              END;
+
+  // ── Check 7: Shared gene metabolism risk (PGx check) ─────────────────────
+  pgx_genes = SELECT g
+              FROM proposed:d -(METABOLIZED_BY:e)-> Gene:g
+              ACCUM
+                g.@count += 1,
+                d.@alerts += ("Metabolised by " + g.symbol);
+
+  pgx_conflict = SELECT g FROM pgx_genes:g
+                 WHERE g.@count > 1
+                 ACCUM
+                   @@moderate_alerts += ("⚡ PGx: Multiple proposed drugs metabolised by " +
+                                         g.symbol + " — dosing interaction possible");
+
+  // ── Output ────────────────────────────────────────────────────────────────
+  PRINT patient [p.patient_id, p.name, p.age, p.gender, p.blood_type];
+  PRINT proposed [
+    proposed.drug_id, proposed.name, proposed.drug_class,
+    proposed.black_box_warning, proposed.pregnancy_category,
+    proposed.@alerts
+  ];
+  PRINT current_drugs [
+    current_drugs.drug_id, current_drugs.name, current_drugs.drug_class
+  ];
+  PRINT patient_diseases [
+    patient_diseases.disease_id, patient_diseases.name, patient_diseases.severity
+  ];
+  PRINT @@critical_count, @@major_count;
+  PRINT @@critical_alerts;
+  PRINT @@major_alerts;
+  PRINT @@moderate_alerts;
+  PRINT @@info_alerts;
+}

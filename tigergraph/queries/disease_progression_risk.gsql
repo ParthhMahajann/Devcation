@@ -1,0 +1,83 @@
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  Query 8: Disease Progression Risk Chain  (NEW)                        ║
+// ║  For a patient's active diseases, follows PROGRESSES_TO edges          ║
+// ║  to show what can develop if left untreated                            ║
+// ║  Returns risk chains with probability × time estimates                 ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+
+CREATE QUERY disease_progression_risk(
+  VERTEX<Patient> p,
+  INT             max_depth = 3
+) FOR GRAPH MedGraph {
+
+  // ── Accumulators ──────────────────────────────────────────────────────────
+  SumAccum<FLOAT>   @cumulative_risk;
+  ListAccum<STRING> @progression_chain;
+  SumAccum<FLOAT>   @min_years;
+  SetAccum<STRING>  @prevention_notes;
+
+  MapAccum<STRING, FLOAT>  @@risk_summary;   // disease name → cumulative risk
+  SetAccum<STRING>         @@critical_chains;
+
+  patient = {p};
+
+  // ── Step 1: Patient's active / chronic diseases ───────────────────────────
+  active_diseases = SELECT d
+                    FROM patient:s -(DIAGNOSED_WITH:e)-> Disease:d
+                    WHERE e.status == "active" OR e.status == "chronic"
+                    ACCUM
+                      d.@cumulative_risk   = 1.0,   // baseline: already has this
+                      d.@progression_chain += d.name,
+                      d.@min_years         = 0.0;
+
+  // ── Step 2: BFS on PROGRESSES_TO edges ───────────────────────────────────
+  frontier = active_diseases;
+  INT depth = 0;
+
+  WHILE frontier.size() > 0 AND depth < max_depth LIMIT 10 DO
+    next_stage = SELECT d2
+                 FROM frontier:d -(PROGRESSES_TO:e)-> Disease:d2
+                 ACCUM
+                   d2.@cumulative_risk   += d.@cumulative_risk * e.progression_rate,
+                   d2.@progression_chain += d.@progression_chain,
+                   d2.@progression_chain += (" →[" + (string)(e.progression_rate * 100) +
+                                            "% in " + (string)e.avg_years_to_progress + "yr]→ " + d2.name),
+                   d2.@min_years         += (d.@min_years + e.avg_years_to_progress),
+                   IF NOT e.prevention_possible THEN
+                     d2.@prevention_notes += "⚠ Progression to " + d2.name + " is NOT preventable"
+                   ELSE
+                     d2.@prevention_notes += "✓ Progression to " + d2.name + " is preventable"
+                   END,
+                   IF d.@cumulative_risk * e.progression_rate > 0.3 THEN
+                     @@critical_chains += (d.name + " → " + d2.name +
+                                          " [" + (string)(e.progression_rate * 100) + "% risk]")
+                   END;
+
+    // accumulate risk summary
+    tmp = SELECT d2 FROM next_stage:d2
+          ACCUM @@risk_summary += (d2.name -> d2.@cumulative_risk);
+
+    frontier = next_stage;
+    depth = depth + 1;
+  END;
+
+  // ── Collect all progression stages (exclude starting diseases) ────────────
+  all_stages = SELECT d FROM {Disease.*}:d
+               WHERE d.@cumulative_risk > 0 AND d.@cumulative_risk < 1.0
+               ORDER BY d.@cumulative_risk DESC
+               LIMIT 20;
+
+  PRINT patient [p.patient_id, p.name, p.age, p.gender];
+  PRINT active_diseases [
+    active_diseases.disease_id, active_diseases.name,
+    active_diseases.severity, active_diseases.category
+  ];
+  PRINT all_stages [
+    all_stages.disease_id, all_stages.name, all_stages.severity,
+    all_stages.category, all_stages.mortality_rate,
+    all_stages.@cumulative_risk, all_stages.@min_years,
+    all_stages.@progression_chain, all_stages.@prevention_notes
+  ];
+  PRINT @@risk_summary;
+  PRINT @@critical_chains;
+}

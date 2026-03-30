@@ -1,36 +1,78 @@
-// Query 1: Symptom-Based Differential Diagnosis
-// Multi-hop weighted traversal: Symptoms → Diseases
-// Returns ranked list of diseases with confidence scores
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  Query 1: Multi-Stage Differential Diagnosis                           ║
+// ║  Stage 1 — Direct weighted symptom → disease scoring                  ║
+// ║  Stage 2 — Bonus via correlated symptoms (SYMPTOM_OVERLAP 1-hop)      ║
+// ║  Stage 3 — Body-system affinity bonus                                  ║
+// ║  Returns ranked differential with confidence scores                   ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
 
-CREATE QUERY diagnose_from_symptoms(SET<STRING> input_symptoms) FOR GRAPH MedGraph {
-  SumAccum<FLOAT> @score;
-  SumAccum<INT> @match_count;
-  MapAccum<STRING, FLOAT> @matched_symptoms;
+CREATE QUERY diagnose_from_symptoms(
+  SET<STRING> input_symptoms,
+  STRING      filter_system  = "",   // optional: limit to one body system
+  INT         top_k          = 10
+) FOR GRAPH MedGraph {
 
-  symptoms = {Symptom.*};
+  // ── Accumulators ──────────────────────────────────────────────────────────
+  SumAccum<FLOAT>          @direct_score;
+  SumAccum<FLOAT>          @indirect_score;
+  SumAccum<INT>            @match_count;
+  MapAccum<STRING, FLOAT>  @matched_symptoms;
+  SetAccum<STRING>         @affected_systems;
+  FLOAT                    OVERLAP_WEIGHT = 0.35;
 
-  // Find matching symptom vertices
-  matched = SELECT s FROM symptoms:s
-            WHERE s.name IN input_symptoms;
+  // ── Stage 1: Match input symptom names → Symptom vertices ────────────────
+  all_symptoms = {Symptom.*};
 
-  // Traverse HAS_SYMPTOM edges to find diseases, accumulate scores
-  diseases = SELECT d FROM matched:s -(HAS_SYMPTOM:e)- Disease:d
-             ACCUM
-               d.@score += e.weight * s.severity_weight,
-               d.@match_count += 1,
-               d.@matched_symptoms += (s.name -> e.weight)
-             ORDER BY d.@score DESC
-             LIMIT 10;
+  matched_s = SELECT s FROM all_symptoms:s
+              WHERE s.name IN input_symptoms;
 
-  PRINT diseases [
-    diseases.disease_id,
-    diseases.name,
-    diseases.icd_code,
-    diseases.severity,
-    diseases.category,
-    diseases.description,
-    diseases.@score,
-    diseases.@match_count,
-    diseases.@matched_symptoms
+  // ── Stage 2: Direct Symptom → Disease scoring ────────────────────────────
+  direct_diseases = SELECT d
+                    FROM matched_s:s -(HAS_SYMPTOM:e)- Disease:d
+                    ACCUM
+                      d.@direct_score  += e.weight * s.severity_weight,
+                      d.@match_count   += 1,
+                      d.@matched_symptoms += (s.name -> (e.weight * s.severity_weight));
+
+  // ── Stage 3: Indirect scoring via correlated symptoms ────────────────────
+  // Symptoms co-occurring with input symptoms also contribute (discounted)
+  correlated_s = SELECT t
+                 FROM matched_s:s -(SYMPTOM_OVERLAP:eo)- Symptom:t
+                 WHERE t.name NOT IN input_symptoms AND eo.correlation_score > 0.5;
+
+  indirect_diseases = SELECT d
+                      FROM correlated_s:s -(HAS_SYMPTOM:e)- Disease:d
+                      ACCUM
+                        d.@indirect_score += e.weight * s.severity_weight * OVERLAP_WEIGHT;
+
+  // ── Stage 4: Collect body systems for each disease ────────────────────────
+  all_candidates = direct_diseases UNION indirect_diseases;
+
+  sys_hop = SELECT bs
+            FROM all_candidates:d -(AFFECTS_SYSTEM:e)-> BodySystem:bs
+            ACCUM d.@affected_systems += bs.name;
+
+  // ── Stage 5: Apply body-system filter and rank ────────────────────────────
+  results = SELECT d FROM all_candidates:d
+            WHERE (filter_system == "" OR filter_system IN d.@affected_systems)
+              AND (d.@direct_score > 0)
+            ORDER BY (d.@direct_score + d.@indirect_score) DESC
+            LIMIT top_k;
+
+  PRINT results [
+    results.disease_id,
+    results.name,
+    results.icd10_code,
+    results.severity,
+    results.category,
+    results.description,
+    results.prevalence_per_100k,
+    results.is_hereditary,
+    results.is_contagious,
+    results.@direct_score,
+    results.@indirect_score,
+    results.@match_count,
+    results.@matched_symptoms,
+    results.@affected_systems
   ];
 }

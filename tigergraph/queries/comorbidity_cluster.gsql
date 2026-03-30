@@ -1,0 +1,105 @@
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  Query 9: Comorbidity Cluster Analysis  (NEW)                          ║
+// ║  BFS on COMORBID_WITH edges from a seed disease                        ║
+// ║  Identifies disease clusters for clinical pattern recognition          ║
+// ║  Also pulls risk factors driving the cluster                           ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+
+CREATE QUERY comorbidity_cluster(
+  VERTEX<Disease> seed_disease,
+  INT             max_hops = 2,
+  FLOAT           min_rate = 0.1   // minimum comorbidity_rate threshold
+) FOR GRAPH MedGraph {
+
+  // ── Accumulators ──────────────────────────────────────────────────────────
+  OrAccum                  @visited;
+  SumAccum<FLOAT>          @total_comorbidity_weight;
+  SumAccum<INT>            @hop_distance;
+  SetAccum<STRING>         @shared_risk_factors;
+  SetAccum<STRING>         @shared_body_systems;
+  SetAccum<EDGE>           @@cluster_edges;
+  MapAccum<STRING, FLOAT>  @@top_comorbidities;
+
+  // ── Seed disease ──────────────────────────────────────────────────────────
+  start = {seed_disease};
+  start = SELECT s FROM start:s
+          ACCUM s.@visited = TRUE, s.@hop_distance = 0;
+
+  // ── BFS on COMORBID_WITH ──────────────────────────────────────────────────
+  frontier = start;
+  INT hop = 0;
+
+  WHILE frontier.size() > 0 AND hop < max_hops LIMIT 5 DO
+    next_level = SELECT t
+                 FROM frontier:s -(COMORBID_WITH:e)- Disease:t
+                 WHERE t.@visited == FALSE AND e.comorbidity_rate >= min_rate
+                 ACCUM
+                   t.@visited                   = TRUE,
+                   t.@total_comorbidity_weight  += e.comorbidity_rate,
+                   t.@hop_distance               = hop + 1,
+                   @@cluster_edges              += e,
+                   @@top_comorbidities          += (t.name -> e.comorbidity_rate)
+                 ORDER BY e.comorbidity_rate DESC
+                 LIMIT 10;
+
+    frontier = next_level;
+    hop = hop + 1;
+  END;
+
+  // ── Collect full cluster ──────────────────────────────────────────────────
+  cluster = SELECT d FROM {Disease.*}:d
+            WHERE d.@visited == TRUE
+            ORDER BY d.@total_comorbidity_weight DESC;
+
+  // ── Shared risk factors across cluster ────────────────────────────────────
+  cluster_risk_factors = SELECT rf
+                         FROM cluster:d <-(INCREASES_RISK:e)- RiskFactor:rf
+                         ACCUM
+                           rf.@count += 1,
+                           d.@shared_risk_factors += rf.name
+                         HAVING rf.@count > 1
+                         ORDER BY rf.@count DESC
+                         LIMIT 8;
+
+  // ── Shared body systems across cluster ────────────────────────────────────
+  cluster_systems = SELECT bs
+                    FROM cluster:d -(AFFECTS_SYSTEM:e)-> BodySystem:bs
+                    ACCUM
+                      bs.@count += 1,
+                      d.@shared_body_systems += bs.name
+                    ORDER BY bs.@count DESC;
+
+  // ── Common drugs treating 2+ diseases in cluster ──────────────────────────
+  cluster_drugs = SELECT dr
+                  FROM cluster:d <-(TREATS:e)- Drug:dr
+                  WHERE e.first_line == TRUE
+                  ACCUM dr.@count += 1
+                  HAVING dr.@count > 1
+                  ORDER BY dr.@count DESC
+                  LIMIT 5;
+
+  PRINT start [
+    start.disease_id, start.name, start.severity,
+    start.category, start.description
+  ];
+  PRINT cluster [
+    cluster.disease_id, cluster.name, cluster.severity,
+    cluster.category, cluster.is_hereditary, cluster.is_contagious,
+    cluster.@hop_distance, cluster.@total_comorbidity_weight,
+    cluster.@shared_risk_factors, cluster.@shared_body_systems
+  ];
+  PRINT cluster_risk_factors [
+    cluster_risk_factors.risk_id, cluster_risk_factors.name,
+    cluster_risk_factors.category, cluster_risk_factors.modifiable,
+    cluster_risk_factors.@count
+  ];
+  PRINT cluster_systems [
+    cluster_systems.system_id, cluster_systems.name, cluster_systems.@count
+  ];
+  PRINT cluster_drugs [
+    cluster_drugs.drug_id, cluster_drugs.name, cluster_drugs.drug_class,
+    cluster_drugs.@count
+  ];
+  PRINT @@cluster_edges;
+  PRINT @@top_comorbidities;
+}

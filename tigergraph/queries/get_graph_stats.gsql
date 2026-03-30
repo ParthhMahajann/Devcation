@@ -1,29 +1,71 @@
-// Query 5: Graph Statistics
-// Returns vertex and edge counts for the dashboard
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  Query 5: Graph Statistics Dashboard                                   ║
+// ║  Returns vertex + edge counts for all 13 types                        ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
 
 CREATE QUERY get_graph_stats() FOR GRAPH MedGraph {
+
+  // ── Vertex count accumulators ─────────────────────────────────────────────
   SumAccum<INT> @@disease_count;
   SumAccum<INT> @@symptom_count;
   SumAccum<INT> @@drug_count;
   SumAccum<INT> @@side_effect_count;
   SumAccum<INT> @@gene_count;
   SumAccum<INT> @@patient_count;
-  SumAccum<INT> @@edge_count;
+  SumAccum<INT> @@body_system_count;
+  SumAccum<INT> @@medical_test_count;
+  SumAccum<INT> @@biomarker_count;
+  SumAccum<INT> @@risk_factor_count;
+  SumAccum<INT> @@pathway_count;
+  SumAccum<INT> @@drug_class_count;
+  SumAccum<INT> @@procedure_count;
 
-  diseases  = {Disease.*};
-  symptoms  = {Symptom.*};
-  drugs     = {Drug.*};
-  effects   = {SideEffect.*};
-  genes     = {Gene.*};
-  patients  = {Patient.*};
+  // ── Edge relationship count accumulators ─────────────────────────────────
+  SumAccum<INT> @@has_symptom_count;
+  SumAccum<INT> @@treats_count;
+  SumAccum<INT> @@interacts_count;
+  SumAccum<INT> @@associated_count;
+  SumAccum<INT> @@comorbid_count;
+  SumAccum<INT> @@diagnosed_with_count;
+  SumAccum<INT> @@takes_drug_count;
 
-  tmp = SELECT s FROM diseases:s  ACCUM @@disease_count += 1;
-  tmp = SELECT s FROM symptoms:s  ACCUM @@symptom_count += 1;
-  tmp = SELECT s FROM drugs:s     ACCUM @@drug_count += 1;
-  tmp = SELECT s FROM effects:s   ACCUM @@side_effect_count += 1;
-  tmp = SELECT s FROM genes:s     ACCUM @@gene_count += 1;
-  tmp = SELECT s FROM patients:s  ACCUM @@patient_count += 1;
+  // ── Count all vertex types ────────────────────────────────────────────────
+  tmp = SELECT s FROM {Disease.*}:s    ACCUM @@disease_count    += 1;
+  tmp = SELECT s FROM {Symptom.*}:s    ACCUM @@symptom_count    += 1;
+  tmp = SELECT s FROM {Drug.*}:s       ACCUM @@drug_count       += 1;
+  tmp = SELECT s FROM {SideEffect.*}:s ACCUM @@side_effect_count+= 1;
+  tmp = SELECT s FROM {Gene.*}:s       ACCUM @@gene_count       += 1;
+  tmp = SELECT s FROM {Patient.*}:s    ACCUM @@patient_count    += 1;
+  tmp = SELECT s FROM {BodySystem.*}:s ACCUM @@body_system_count+= 1;
+  tmp = SELECT s FROM {MedicalTest.*}:s ACCUM @@medical_test_count += 1;
+  tmp = SELECT s FROM {Biomarker.*}:s  ACCUM @@biomarker_count  += 1;
+  tmp = SELECT s FROM {RiskFactor.*}:s ACCUM @@risk_factor_count+= 1;
+  tmp = SELECT s FROM {Pathway.*}:s    ACCUM @@pathway_count    += 1;
+  tmp = SELECT s FROM {DrugClass.*}:s  ACCUM @@drug_class_count += 1;
+  tmp = SELECT s FROM {Procedure.*}:s  ACCUM @@procedure_count  += 1;
+
+  // ── Sample key relationship counts ───────────────────────────────────────
+  tmp2 = SELECT t FROM {Disease.*}:s -(HAS_SYMPTOM:e)- Symptom:t
+         ACCUM @@has_symptom_count += 1;
+  tmp2 = SELECT t FROM {Drug.*}:s -(TREATS:e)-> Disease:t
+         ACCUM @@treats_count += 1;
+  tmp2 = SELECT t FROM {Drug.*}:s -(INTERACTS_WITH:e)- Drug:t
+         ACCUM @@interacts_count += 1;
+  tmp2 = SELECT t FROM {Gene.*}:s -(ASSOCIATED_WITH:e)-> Disease:t
+         ACCUM @@associated_count += 1;
+  tmp2 = SELECT t FROM {Disease.*}:s -(COMORBID_WITH:e)- Disease:t
+         ACCUM @@comorbid_count += 1;
+  tmp2 = SELECT t FROM {Patient.*}:s -(DIAGNOSED_WITH:e)-> Disease:t
+         ACCUM @@diagnosed_with_count += 1;
+  tmp2 = SELECT t FROM {Patient.*}:s -(TAKES_DRUG:e)-> Drug:t
+         ACCUM @@takes_drug_count += 1;
 
   PRINT @@disease_count, @@symptom_count, @@drug_count,
-        @@side_effect_count, @@gene_count, @@patient_count;
+        @@side_effect_count, @@gene_count, @@patient_count,
+        @@body_system_count, @@medical_test_count, @@biomarker_count,
+        @@risk_factor_count, @@pathway_count, @@drug_class_count,
+        @@procedure_count,
+        @@has_symptom_count, @@treats_count, @@interacts_count,
+        @@associated_count, @@comorbid_count,
+        @@diagnosed_with_count, @@takes_drug_count;
 }

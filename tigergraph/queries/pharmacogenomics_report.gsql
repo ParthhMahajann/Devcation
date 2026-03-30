@@ -1,0 +1,91 @@
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  Query 7: Pharmacogenomics Report  (NEW)                               ║
+// ║  Personalises drug therapy based on patient's gene variants            ║
+// ║                                                                        ║
+// ║  Traversal:                                                            ║
+// ║    Patient → TAKES_DRUG → Drug → METABOLIZED_BY → Gene                ║
+// ║    Patient → HAS_VARIANT → Gene  (cross-reference)                    ║
+// ║  Flags: poor/ultra-rapid metabolisers, efficacy changes, alternatives  ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+
+CREATE QUERY pharmacogenomics_report(VERTEX<Patient> p) FOR GRAPH MedGraph {
+
+  // ── Accumulators ──────────────────────────────────────────────────────────
+  SetAccum<STRING>         @pgx_alerts;       // per gene
+  SetAccum<STRING>         @drug_alerts;      // per drug
+  MapAccum<STRING, STRING> @@pgx_matrix;      // drug → phenotype warning
+  SetAccum<STRING>         @@high_risk_drugs;
+  SetAccum<STRING>         @@patient_phenotypes;
+
+  patient = {p};
+
+  // ── Step 1: Patient's current medications ────────────────────────────────
+  drugs = SELECT dr FROM patient:s -(TAKES_DRUG:e)-> Drug:dr;
+
+  // ── Step 2: Genes that metabolise those drugs ─────────────────────────────
+  metabolising_genes = SELECT g
+                       FROM drugs:dr -(METABOLIZED_BY:e)-> Gene:g
+                       ACCUM
+                         g.@pgx_alerts += ("Metabolises: " + dr.name +
+                                          " as " + e.metabolism_type +
+                                          " → efficacy: " + e.impact_on_efficacy),
+                         dr.@drug_alerts += ("Gene " + g.symbol + " metabolises this drug");
+
+  // ── Step 3: Patient's known genetic variants ──────────────────────────────
+  patient_variants = SELECT g
+                     FROM patient:s -(HAS_VARIANT:e)-> Gene:g
+                     ACCUM
+                       g.@pgx_alerts  += ("Patient variant: " + e.genotype + " → " + e.phenotype),
+                       @@patient_phenotypes += (g.symbol + "=" + e.phenotype);
+
+  // ── Step 4: Cross-reference — variants affecting current medications ──────
+  // Genes that are BOTH metabolising a patient's drug AND have a patient variant
+  at_risk_genes = metabolising_genes INTERSECT patient_variants;
+
+  risk_drugs = SELECT dr
+               FROM at_risk_genes:g <-(METABOLIZED_BY:e)- Drug:dr
+               WHERE dr IN drugs
+               ACCUM
+                 dr.@drug_alerts += ("⚠ PGx ALERT: " + g.symbol + " variant affects " +
+                                    e.metabolism_type + " → " + e.impact_on_efficacy),
+                 @@pgx_matrix    += (dr.name -> (g.symbol + ":" + e.impact_on_efficacy)),
+                 IF e.impact_on_efficacy == "reduced" OR e.impact_on_efficacy == "increased" THEN
+                   @@high_risk_drugs += dr.name
+                 END;
+
+  // ── Step 5: Genes targeted by drugs (pharmacodynamic profile) ────────────
+  target_genes = SELECT g
+                 FROM drugs:dr -(TARGETS_GENE:e)-> Gene:g
+                 ACCUM
+                   g.@pgx_alerts += ("Drug target: " + dr.name + " [" + e.mechanism + "]");
+
+  // ── Step 6: Disease-gene associations from patient's conditions ────────────
+  disease_genes = SELECT g
+                  FROM patient:s -(DIAGNOSED_WITH:ediag)-> Disease:d <-(ASSOCIATED_WITH:e)- Gene:g
+                  WHERE e.evidence_strength > 0.6
+                  ACCUM
+                    g.@pgx_alerts += ("Disease-associated: " + d.name +
+                                     " [" + e.association_type + ", strength=" +
+                                     (string)e.evidence_strength + "]");
+
+  PRINT patient [p.patient_id, p.name, p.age, p.gender, p.ethnicity];
+  PRINT drugs [
+    drugs.drug_id, drugs.name, drugs.generic_name,
+    drugs.drug_class, drugs.route, drugs.@drug_alerts
+  ];
+  PRINT at_risk_genes [
+    at_risk_genes.gene_id, at_risk_genes.name,
+    at_risk_genes.symbol, at_risk_genes.chromosome, at_risk_genes.@pgx_alerts
+  ];
+  PRINT patient_variants [
+    patient_variants.gene_id, patient_variants.name,
+    patient_variants.symbol, patient_variants.@pgx_alerts
+  ];
+  PRINT target_genes [
+    target_genes.gene_id, target_genes.name,
+    target_genes.symbol, target_genes.@pgx_alerts
+  ];
+  PRINT @@pgx_matrix;
+  PRINT @@high_risk_drugs;
+  PRINT @@patient_phenotypes;
+}

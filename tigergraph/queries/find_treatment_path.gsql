@@ -1,41 +1,124 @@
-// Query 3: Treatment Pathway Explorer
-// BFS from a disease to find all treating drugs and their side effects
-// Returns a subgraph for visualization
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  Query 3: Comprehensive Treatment Pathway Explorer                     ║
+// ║  Disease → Drugs (first-line + alternatives) → Side Effects → Genes   ║
+// ║  Disease → Procedures                                                  ║
+// ║  Disease → Progression chain (what happens untreated)                 ║
+// ║  Disease → Required Tests + Monitored Biomarkers                      ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
 
 CREATE QUERY find_treatment_path(VERTEX<Disease> source_disease) FOR GRAPH MedGraph {
-  OrAccum @visited;
-  ListAccum<STRING> @path;
+
+  OrAccum                  @visited;
+  ListAccum<STRING>        @path;
+  SetAccum<STRING>         @risk_flags;
+  SumAccum<FLOAT>          @efficacy;
 
   start = {source_disease};
   start = SELECT s FROM start:s
           ACCUM s.@visited = TRUE, s.@path += s.name;
 
-  // Hop 1: Disease → Drugs that treat it
-  drugs = SELECT dr FROM start:d -(TREATS:e)- Drug:dr
+  // ── Hop 1a: Disease → Drugs that treat it ─────────────────────────────────
+  // Reverse traverse: Drug -TREATS-> Disease, we go from Disease back to Drug
+  drugs = SELECT dr
+          FROM start:d <-(TREATS:e)- Drug:dr
           WHERE dr.@visited == FALSE
           ACCUM
-            dr.@visited = TRUE,
-            dr.@path += d.@path,
-            dr.@path += "TREATS:" + dr.name;
+            dr.@visited  = TRUE,
+            dr.@path    += d.@path,
+            dr.@path    += ("TREATS[" + (CASE WHEN e.first_line THEN "1st-line" ELSE "alt" END) + "]:" + dr.name),
+            dr.@efficacy = e.efficacy_score,
+            IF dr.black_box_warning THEN
+              dr.@risk_flags += "⚠ BLACK BOX WARNING"
+            END
+          ORDER BY e.first_line DESC, e.efficacy_score DESC;
 
-  // Hop 2: Drugs → Side Effects
-  side_effects = SELECT se FROM drugs:dr -(CAUSES_SIDE_EFFECT:e)- SideEffect:se
+  // ── Hop 1b: Disease → Non-drug Procedures ────────────────────────────────
+  procedures = SELECT pr
+               FROM start:d -(TREATED_BY_PROCEDURE:e)-> Procedure:pr
+               WHERE pr.@visited == FALSE
+               ACCUM
+                 pr.@visited = TRUE,
+                 pr.@path   += d.@path,
+                 pr.@path   += ("PROCEDURE[" + e.evidence_level + "]:" + pr.name),
+                 IF e.success_rate > 0.8 THEN
+                   pr.@risk_flags += "High success rate"
+                 END;
+
+  // ── Hop 1c: Disease → Required Diagnostic Tests ───────────────────────────
+  tests = SELECT t
+          FROM start:d -(DIAGNOSED_BY:e)-> MedicalTest:t
+          ACCUM
+            t.@path += d.@path,
+            t.@path += ("TEST[sens=" + (string)e.sensitivity + "]:" + t.name);
+
+  // ── Hop 1d: Disease → Monitored Biomarkers ───────────────────────────────
+  biomarkers = SELECT b
+               FROM start:d -(MONITORED_VIA:e)-> Biomarker:b
+               ACCUM
+                 b.@path += d.@path,
+                 b.@path += ("MONITOR:" + b.name + " every " + e.monitoring_frequency);
+
+  // ── Hop 2a: Drugs → Side Effects ─────────────────────────────────────────
+  side_effects = SELECT se
+                 FROM drugs:dr -(CAUSES_SIDE_EFFECT:e)-> SideEffect:se
                  WHERE se.@visited == FALSE
                  ACCUM
                    se.@visited = TRUE,
-                   se.@path += dr.@path,
-                   se.@path += "SIDE_EFFECT:" + se.name;
+                   se.@path   += dr.@path,
+                   se.@path   += ("SIDE_EFFECT[p=" + (string)e.probability + "]:" + se.name),
+                   IF se.severity == "life-threatening" OR se.severity == "severe" THEN
+                     dr.@risk_flags += ("⚠ " + se.name + " [" + se.frequency + "]")
+                   END;
 
-  // Hop 3: Drugs → Genes they target
-  genes = SELECT g FROM drugs:dr -(TARGETS_GENE:e)- Gene:g
+  // ── Hop 2b: Drugs → Gene Targets ─────────────────────────────────────────
+  genes = SELECT g
+          FROM drugs:dr -(TARGETS_GENE:e)-> Gene:g
           WHERE g.@visited == FALSE
           ACCUM
             g.@visited = TRUE,
-            g.@path += dr.@path,
-            g.@path += "TARGETS:" + g.name;
+            g.@path   += dr.@path,
+            g.@path   += ("TARGET[" + e.mechanism + "]:" + g.symbol);
 
-  PRINT start [start.disease_id, start.name, start.severity, start.@path];
-  PRINT drugs [drugs.drug_id, drugs.name, drugs.drug_class, drugs.@path];
-  PRINT side_effects [side_effects.effect_id, side_effects.name, side_effects.severity, side_effects.@path];
-  PRINT genes [genes.gene_id, genes.name, genes.chromosome, genes.@path];
+  // ── Hop 1e: Disease → Progression Chain (untreated risk) ─────────────────
+  progressions = SELECT d2
+                 FROM start:d -(PROGRESSES_TO:e)-> Disease:d2
+                 ACCUM
+                   d2.@path += d.@path,
+                   d2.@path += ("PROGRESSES_TO[" + (string)e.progression_rate + "," +
+                                (string)e.avg_years_to_progress + "yrs]:" + d2.name),
+                   IF NOT e.prevention_possible THEN
+                     d2.@risk_flags += "⚠ Progression not preventable"
+                   END;
+
+  PRINT start [
+    start.disease_id, start.name, start.icd10_code, start.severity,
+    start.category, start.description, start.mortality_rate, start.@path
+  ];
+  PRINT drugs [
+    drugs.drug_id, drugs.name, drugs.generic_name, drugs.drug_class,
+    drugs.route, drugs.black_box_warning, drugs.@efficacy,
+    drugs.@path, drugs.@risk_flags
+  ];
+  PRINT procedures [
+    procedures.procedure_id, procedures.name, procedures.procedure_type,
+    procedures.cpt_code, procedures.@path, procedures.@risk_flags
+  ];
+  PRINT tests [
+    tests.test_id, tests.name, tests.test_type, tests.cost_usd, tests.@path
+  ];
+  PRINT biomarkers [
+    biomarkers.biomarker_id, biomarkers.name, biomarkers.unit,
+    biomarkers.normal_range_low, biomarkers.normal_range_high, biomarkers.@path
+  ];
+  PRINT side_effects [
+    side_effects.effect_id, side_effects.name, side_effects.severity,
+    side_effects.frequency, side_effects.reversible, side_effects.@path
+  ];
+  PRINT genes [
+    genes.gene_id, genes.name, genes.symbol, genes.chromosome, genes.@path
+  ];
+  PRINT progressions [
+    progressions.disease_id, progressions.name, progressions.severity,
+    progressions.@path, progressions.@risk_flags
+  ];
 }

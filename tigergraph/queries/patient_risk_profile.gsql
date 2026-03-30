@@ -1,42 +1,163 @@
-// Query 4: Patient Risk Assessment
-// Aggregates diagnoses, medications, interactions, and genetic risk factors
-// Returns a comprehensive risk profile for a patient
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  Query 4: Holistic Patient Risk Assessment                             ║
+// ║  Aggregates: active diseases, medications, drug interactions,          ║
+// ║  allergies, genetic associations, risk factors, comorbidity risk       ║
+// ║  Returns a single comprehensive risk score + breakdown                 ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
 
 CREATE QUERY patient_risk_profile(VERTEX<Patient> p) FOR GRAPH MedGraph {
-  SumAccum<FLOAT> @risk_score;
-  SetAccum<STRING> @risk_factors;
-  SetAccum<STRING> @interacting_pair;
+
+  // ── Per-vertex accumulators ───────────────────────────────────────────────
+  SumAccum<FLOAT>    @risk_score;
+  SetAccum<STRING>   @risk_flags;
+  SetAccum<STRING>   @alert_msgs;
+
+  // ── Global summary accumulators ───────────────────────────────────────────
+  SumAccum<FLOAT>    @@total_disease_risk;
+  SumAccum<FLOAT>    @@total_drug_risk;
+  SumAccum<FLOAT>    @@total_genetic_risk;
+  SumAccum<FLOAT>    @@total_lifestyle_risk;
+  SetAccum<STRING>   @@critical_alerts;
 
   patient = {p};
 
-  // Get patient's diagnosed diseases
-  diseases = SELECT d FROM patient:s -(DIAGNOSED_WITH:e)-> Disease:d
+  // ── 1. Active Diseases ────────────────────────────────────────────────────
+  diseases = SELECT d
+             FROM patient:s -(DIAGNOSED_WITH:e)-> Disease:d
+             WHERE e.status == "active" OR e.status == "chronic"
              ACCUM
-               d.@risk_score += CASE WHEN d.severity == "critical" THEN 10.0
-                                     WHEN d.severity == "severe"   THEN 7.0
-                                     WHEN d.severity == "moderate" THEN 4.0
-                                     ELSE 1.0 END;
+               d.@risk_score += CASE
+                 WHEN d.severity == "critical"  THEN 10.0
+                 WHEN d.severity == "severe"    THEN 7.0
+                 WHEN d.severity == "moderate"  THEN 4.0
+                 ELSE 1.5
+               END,
+               @@total_disease_risk += CASE
+                 WHEN d.severity == "critical"  THEN 10.0
+                 WHEN d.severity == "severe"    THEN 7.0
+                 WHEN d.severity == "moderate"  THEN 4.0
+                 ELSE 1.5
+               END;
 
-  // Get patient's current medications
-  drugs = SELECT dr FROM patient:s -(TAKES_DRUG:e)-> Drug:dr;
+  // ── 2. Current Medications ────────────────────────────────────────────────
+  drugs = SELECT dr
+          FROM patient:s -(TAKES_DRUG:e)-> Drug:dr
+          ACCUM
+            IF dr.black_box_warning THEN
+              dr.@risk_flags += "⚠ BLACK BOX WARNING",
+              @@critical_alerts += ("Drug " + dr.name + " has BLACK BOX WARNING")
+            END;
 
-  // Check interactions between patient's medications
-  interactions = SELECT t FROM drugs:s -(INTERACTS_WITH:e)- Drug:t
+  // ── 3. Drug-Drug Interactions ─────────────────────────────────────────────
+  interactions = SELECT t
+                 FROM drugs:s -(INTERACTS_WITH:e)- Drug:t
                  WHERE t IN drugs AND t != s
                  ACCUM
-                   t.@risk_score += CASE WHEN e.severity == "dangerous" THEN 10.0
-                                         WHEN e.severity == "moderate"  THEN 5.0
-                                         ELSE 1.0 END,
-                   t.@risk_factors += s.name + " <-> " + t.name + " [" + e.severity + "]";
+                   t.@risk_score += CASE
+                     WHEN e.severity == "dangerous" THEN 12.0
+                     WHEN e.severity == "major"     THEN 8.0
+                     WHEN e.severity == "moderate"  THEN 4.0
+                     ELSE 1.0
+                   END,
+                   t.@risk_flags += (s.name + " ↔ " + t.name + " [" + e.severity + "]"),
+                   @@total_drug_risk += CASE
+                     WHEN e.severity == "dangerous" THEN 12.0
+                     WHEN e.severity == "major"     THEN 8.0
+                     WHEN e.severity == "moderate"  THEN 4.0
+                     ELSE 1.0
+                   END,
+                   IF e.severity == "dangerous" OR e.severity == "major" THEN
+                     @@critical_alerts += ("INTERACTION: " + s.name + " + " + t.name + " [" + e.severity + "] — " + e.clinical_effect)
+                   END;
 
-  // Find genes associated with patient's diseases (high confidence)
-  genes = SELECT g FROM diseases:d <-(ASSOCIATED_WITH:e)- Gene:g
-          WHERE e.evidence_strength > 0.7
-          ACCUM g.@risk_factors += "Genetic risk via " + d.name;
+  // ── 4. Drug-Disease Contraindications ────────────────────────────────────
+  contras = SELECT dis
+            FROM drugs:dr -(CONTRAINDICATED_IN:e)-> Disease:dis
+            WHERE dis IN diseases
+            ACCUM
+              dr.@risk_score  += CASE WHEN e.severity == "absolute" THEN 15.0 ELSE 7.0 END,
+              dr.@risk_flags  += ("CONTRAINDICATED in " + dis.name + " [" + e.severity + "]: " + e.reason),
+              @@total_drug_risk += CASE WHEN e.severity == "absolute" THEN 15.0 ELSE 7.0 END,
+              @@critical_alerts += ("CONTRAINDICATION: " + dr.name + " in " + dis.name);
 
-  PRINT patient [p.patient_id, p.name, p.age, p.gender, p.blood_type];
-  PRINT diseases [diseases.disease_id, diseases.name, diseases.severity, diseases.@risk_score];
-  PRINT drugs [drugs.drug_id, drugs.name, drugs.drug_class];
-  PRINT interactions [interactions.drug_id, interactions.name, interactions.@risk_score, interactions.@risk_factors];
-  PRINT genes [genes.gene_id, genes.name, genes.chromosome, genes.@risk_factors];
+  // ── 5. Allergies to Current Medications ───────────────────────────────────
+  allergies = SELECT dr
+              FROM patient:s -(ALLERGIC_TO:e)-> Drug:dr
+              WHERE dr IN drugs
+              ACCUM
+                dr.@risk_score  += CASE WHEN e.severity == "anaphylaxis" THEN 20.0 ELSE 10.0 END,
+                dr.@risk_flags  += ("⚠ ALLERGY [" + e.reaction_type + "/" + e.severity + "]"),
+                @@critical_alerts += ("ALLERGY: Patient is allergic to " + dr.name + " [" + e.reaction_type + "]");
+
+  // ── 6. Genetic Risk Factors ───────────────────────────────────────────────
+  genes = SELECT g
+          FROM diseases:d <-(ASSOCIATED_WITH:e)- Gene:g
+          WHERE e.evidence_strength > 0.65
+          ACCUM
+            g.@risk_score += e.evidence_strength * 3.0,
+            g.@risk_flags += ("Genetic risk for " + d.name + " via " + g.symbol + " [" + e.association_type + "]"),
+            @@total_genetic_risk += e.evidence_strength * 3.0;
+
+  // ── 7. Patient's Known Gene Variants ─────────────────────────────────────
+  variants = SELECT g
+             FROM patient:s -(HAS_VARIANT:e)-> Gene:g
+             ACCUM
+               g.@risk_flags += ("Variant: " + e.genotype + " → " + e.phenotype),
+               IF e.phenotype == "poor_metabolizer" OR e.phenotype == "ultra_rapid" THEN
+                 @@critical_alerts += ("PHARMACOGENOMICS: " + g.symbol + " variant " + e.genotype + " [" + e.phenotype + "]")
+               END;
+
+  // ── 8. Lifestyle / Environmental Risk Factors ─────────────────────────────
+  risk_factors = SELECT rf
+                 FROM patient:s -(HAS_RISK_FACTOR:e)-> RiskFactor:rf
+                 ACCUM
+                   rf.@risk_flags += e.severity_level;
+
+  // Aggregate risk factor → disease risk boosts
+  rf_diseases = SELECT d
+                FROM risk_factors:rf -(INCREASES_RISK:e)-> Disease:d
+                ACCUM
+                  d.@risk_score   += (e.relative_risk - 1.0) * 2.0,
+                  @@total_lifestyle_risk += (e.relative_risk - 1.0) * 2.0;
+
+  // ── 9. Comorbidity risk from active diseases ──────────────────────────────
+  comorbid = SELECT d2
+             FROM diseases:d -(COMORBID_WITH:e)- Disease:d2
+             WHERE d2 NOT IN diseases
+             ACCUM
+               d2.@risk_flags += ("Comorbid risk from " + d.name + " [rate=" + (string)e.comorbidity_rate + "]")
+             ORDER BY e.comorbidity_rate DESC
+             LIMIT 5;
+
+  // ── Final output ──────────────────────────────────────────────────────────
+  PRINT patient [
+    p.patient_id, p.name, p.age, p.gender, p.blood_type,
+    p.bmi, p.smoking_status, p.ethnicity
+  ];
+  PRINT diseases [
+    diseases.disease_id, diseases.name, diseases.severity,
+    diseases.category, diseases.@risk_score
+  ];
+  PRINT drugs [
+    drugs.drug_id, drugs.name, drugs.drug_class, drugs.route,
+    drugs.black_box_warning, drugs.@risk_score, drugs.@risk_flags
+  ];
+  PRINT interactions [
+    interactions.drug_id, interactions.name,
+    interactions.@risk_score, interactions.@risk_flags
+  ];
+  PRINT genes [
+    genes.gene_id, genes.name, genes.symbol,
+    genes.chromosome, genes.@risk_score, genes.@risk_flags
+  ];
+  PRINT risk_factors [
+    risk_factors.risk_id, risk_factors.name, risk_factors.category,
+    risk_factors.modifiable, risk_factors.@risk_flags
+  ];
+  PRINT comorbid [
+    comorbid.disease_id, comorbid.name, comorbid.severity, comorbid.@risk_flags
+  ];
+  PRINT @@total_disease_risk, @@total_drug_risk,
+        @@total_genetic_risk, @@total_lifestyle_risk,
+        @@critical_alerts;
 }

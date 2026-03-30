@@ -1,17 +1,20 @@
-// Query 6: Graph Explorer — Subgraph Sampling
-// Returns a sample of the knowledge graph for visualization
-// Supports filtering by vertex type and hop depth
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  Query 6: Graph Explorer — Multi-type Subgraph Sampling                ║
+// ║  BFS from any vertex type up to max_hops, collecting all entity types  ║
+// ║  Powers the interactive graph visualization in the frontend            ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
 
 CREATE QUERY explore_subgraph(
   STRING center_type,
   STRING center_id,
-  INT max_hops,
-  INT limit_per_hop
+  INT    max_hops       = 2,
+  INT    limit_per_hop  = 20
 ) FOR GRAPH MedGraph {
-  OrAccum @visited;
-  SetAccum<EDGE> @@all_edges;
 
-  // Start from the specified center vertex
+  OrAccum           @visited;
+  SetAccum<EDGE>    @@all_edges;
+
+  // ── Locate the starting vertex ────────────────────────────────────────────
   IF center_type == "Disease" THEN
     start = {Disease.*};
     start = SELECT s FROM start:s WHERE s.disease_id == center_id LIMIT 1;
@@ -24,37 +27,106 @@ CREATE QUERY explore_subgraph(
   ELSE IF center_type == "Gene" THEN
     start = {Gene.*};
     start = SELECT s FROM start:s WHERE s.gene_id == center_id LIMIT 1;
+  ELSE IF center_type == "Patient" THEN
+    start = {Patient.*};
+    start = SELECT s FROM start:s WHERE s.patient_id == center_id LIMIT 1;
+  ELSE IF center_type == "BodySystem" THEN
+    start = {BodySystem.*};
+    start = SELECT s FROM start:s WHERE s.system_id == center_id LIMIT 1;
+  ELSE IF center_type == "Biomarker" THEN
+    start = {Biomarker.*};
+    start = SELECT s FROM start:s WHERE s.biomarker_id == center_id LIMIT 1;
+  ELSE IF center_type == "RiskFactor" THEN
+    start = {RiskFactor.*};
+    start = SELECT s FROM start:s WHERE s.risk_id == center_id LIMIT 1;
+  ELSE IF center_type == "Pathway" THEN
+    start = {Pathway.*};
+    start = SELECT s FROM start:s WHERE s.pathway_id == center_id LIMIT 1;
+  ELSE IF center_type == "Procedure" THEN
+    start = {Procedure.*};
+    start = SELECT s FROM start:s WHERE s.procedure_id == center_id LIMIT 1;
   ELSE
-    // Default: random sample of diseases
+    // Default: random sample of high-connectivity diseases
     start = {Disease.*};
     start = SELECT s FROM start:s ORDER BY RAND() LIMIT 5;
   END;
 
   start = SELECT s FROM start:s ACCUM s.@visited = TRUE;
 
+  // ── BFS traversal across ALL edge types ──────────────────────────────────
   frontier = start;
   INT hop = 0;
-  WHILE frontier.size() > 0 AND hop < max_hops LIMIT 5 DO
+  WHILE frontier.size() > 0 AND hop < max_hops LIMIT 8 DO
     frontier = SELECT t FROM frontier:s -(:e)- :t
                WHERE t.@visited == FALSE
                ACCUM
                  @@all_edges += e,
-                 t.@visited = TRUE
+                 t.@visited   = TRUE
                LIMIT limit_per_hop;
     hop = hop + 1;
   END;
 
-  // Collect all visited vertices
-  all_diseases  = SELECT s FROM {Disease.*}:s  WHERE s.@visited == TRUE;
-  all_symptoms  = SELECT s FROM {Symptom.*}:s  WHERE s.@visited == TRUE;
-  all_drugs     = SELECT s FROM {Drug.*}:s     WHERE s.@visited == TRUE;
-  all_effects   = SELECT s FROM {SideEffect.*}:s WHERE s.@visited == TRUE;
-  all_genes     = SELECT s FROM {Gene.*}:s     WHERE s.@visited == TRUE;
+  // ── Collect all visited vertices by type ──────────────────────────────────
+  all_diseases   = SELECT s FROM {Disease.*}:s   WHERE s.@visited == TRUE;
+  all_symptoms   = SELECT s FROM {Symptom.*}:s   WHERE s.@visited == TRUE;
+  all_drugs      = SELECT s FROM {Drug.*}:s      WHERE s.@visited == TRUE;
+  all_effects    = SELECT s FROM {SideEffect.*}:s WHERE s.@visited == TRUE;
+  all_genes      = SELECT s FROM {Gene.*}:s      WHERE s.@visited == TRUE;
+  all_patients   = SELECT s FROM {Patient.*}:s   WHERE s.@visited == TRUE;
+  all_systems    = SELECT s FROM {BodySystem.*}:s WHERE s.@visited == TRUE;
+  all_tests      = SELECT s FROM {MedicalTest.*}:s WHERE s.@visited == TRUE;
+  all_biomarkers = SELECT s FROM {Biomarker.*}:s  WHERE s.@visited == TRUE;
+  all_risks      = SELECT s FROM {RiskFactor.*}:s WHERE s.@visited == TRUE;
+  all_pathways   = SELECT s FROM {Pathway.*}:s    WHERE s.@visited == TRUE;
+  all_classes    = SELECT s FROM {DrugClass.*}:s  WHERE s.@visited == TRUE;
+  all_procs      = SELECT s FROM {Procedure.*}:s  WHERE s.@visited == TRUE;
 
-  PRINT all_diseases [all_diseases.disease_id, all_diseases.name, all_diseases.severity, all_diseases.category];
-  PRINT all_symptoms [all_symptoms.symptom_id, all_symptoms.name, all_symptoms.body_system];
-  PRINT all_drugs    [all_drugs.drug_id, all_drugs.name, all_drugs.drug_class];
-  PRINT all_effects  [all_effects.effect_id, all_effects.name, all_effects.severity];
-  PRINT all_genes    [all_genes.gene_id, all_genes.name, all_genes.chromosome];
+  // ── Print ─────────────────────────────────────────────────────────────────
+  PRINT all_diseases [
+    all_diseases.disease_id, all_diseases.name,
+    all_diseases.severity, all_diseases.category, all_diseases.icd10_code
+  ];
+  PRINT all_symptoms [
+    all_symptoms.symptom_id, all_symptoms.name,
+    all_symptoms.body_system, all_symptoms.severity_weight
+  ];
+  PRINT all_drugs [
+    all_drugs.drug_id, all_drugs.name, all_drugs.drug_class,
+    all_drugs.approval_status, all_drugs.black_box_warning
+  ];
+  PRINT all_effects [
+    all_effects.effect_id, all_effects.name,
+    all_effects.severity, all_effects.frequency
+  ];
+  PRINT all_genes [
+    all_genes.gene_id, all_genes.name,
+    all_genes.symbol, all_genes.chromosome
+  ];
+  PRINT all_patients [
+    all_patients.patient_id, all_patients.name, all_patients.age, all_patients.gender
+  ];
+  PRINT all_systems [
+    all_systems.system_id, all_systems.name
+  ];
+  PRINT all_tests [
+    all_tests.test_id, all_tests.name, all_tests.test_type, all_tests.is_invasive
+  ];
+  PRINT all_biomarkers [
+    all_biomarkers.biomarker_id, all_biomarkers.name,
+    all_biomarkers.unit, all_biomarkers.biomarker_type
+  ];
+  PRINT all_risks [
+    all_risks.risk_id, all_risks.name,
+    all_risks.category, all_risks.modifiable
+  ];
+  PRINT all_pathways [
+    all_pathways.pathway_id, all_pathways.name, all_pathways.pathway_type
+  ];
+  PRINT all_classes [
+    all_classes.class_id, all_classes.name, all_classes.mechanism
+  ];
+  PRINT all_procs [
+    all_procs.procedure_id, all_procs.name, all_procs.procedure_type
+  ];
   PRINT @@all_edges;
 }

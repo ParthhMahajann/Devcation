@@ -1,35 +1,77 @@
-// Query 2: Drug-Drug Interaction Checker
-// N-hop traversal across INTERACTS_WITH edges
-// Returns interaction edges with severity classification
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  Query 2: Drug Safety & Interaction Checker                            ║
+// ║  Checks drug-drug interactions, side effect aggregation,               ║
+// ║  and shared gene targets (mechanism-based interaction risk)            ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
 
 CREATE QUERY check_drug_interactions(SET<STRING> drug_names) FOR GRAPH MedGraph {
-  SetAccum<EDGE> @@interaction_edges;
-  SetAccum<STRING> @@involved_drug_ids;
 
-  drugs = {Drug.*};
+  // ── Accumulators ──────────────────────────────────────────────────────────
+  SetAccum<EDGE>           @@interaction_edges;
+  SetAccum<EDGE>           @@side_effect_edges;
+  SetAccum<STRING>         @@dangerous_pairs;
+  MapAccum<STRING, INT>    @@side_effect_freq;    // side effect name → count across drugs
+  SetAccum<STRING>         @@shared_gene_targets;
 
-  // Find the input drugs
-  input_drugs = SELECT d FROM drugs:d
+  // ── Retrieve input drugs ──────────────────────────────────────────────────
+  all_drugs = {Drug.*};
+
+  input_drugs = SELECT d FROM all_drugs:d
                 WHERE d.name IN drug_names;
 
-  // Find all pairwise interactions among the input drugs
-  interactions = SELECT t FROM input_drugs:s -(INTERACTS_WITH:e)- Drug:t
-                 WHERE t.name IN drug_names AND t != s
+  // ── Drug-Drug Interactions ────────────────────────────────────────────────
+  interacting = SELECT t
+                FROM input_drugs:s -(INTERACTS_WITH:e)- Drug:t
+                WHERE t.name IN drug_names AND t != s
+                ACCUM
+                  @@interaction_edges += e,
+                  IF e.severity == "dangerous" OR e.severity == "major" THEN
+                    @@dangerous_pairs += (s.name + " ↔ " + t.name + " [" + e.severity + "]")
+                  END;
+
+  // ── Side Effects per Drug ─────────────────────────────────────────────────
+  side_effects = SELECT se
+                 FROM input_drugs:d -(CAUSES_SIDE_EFFECT:e)-> SideEffect:se
                  ACCUM
-                   @@interaction_edges += e,
-                   @@involved_drug_ids += s.drug_id,
-                   @@involved_drug_ids += t.drug_id;
+                   @@side_effect_edges += e,
+                   @@side_effect_freq  += (se.name -> 1);
 
-  // Return all input drugs (for graph display) + interaction edges
-  all_drugs = SELECT d FROM drugs:d
-              WHERE d.name IN drug_names;
+  // ── Shared Gene Targets (mechanism-based collision risk) ──────────────────
+  gene_targets = SELECT g
+                 FROM input_drugs:d -(TARGETS_GENE:e)-> Gene:g
+                 ACCUM
+                   g.@count += 1
+                 HAVING g.@count > 1;   // gene targeted by 2+ drugs = collision risk
 
-  PRINT all_drugs [
-    all_drugs.drug_id,
-    all_drugs.name,
-    all_drugs.drug_class,
-    all_drugs.approval_status,
-    all_drugs.generic_name
+  tmp = SELECT g FROM gene_targets:g
+        ACCUM @@shared_gene_targets += g.symbol + " (" + g.name + ")";
+
+  // ── Contraindications per Drug ────────────────────────────────────────────
+  contraindicated = SELECT dis
+                    FROM input_drugs:d -(CONTRAINDICATED_IN:e)-> Disease:dis
+                    ACCUM dis.@risk_flags += (d.name + " contraindicated: " + e.reason);
+
+  // ── Full drug details ─────────────────────────────────────────────────────
+  all_input = SELECT d FROM all_drugs:d WHERE d.name IN drug_names;
+
+  PRINT all_input [
+    all_input.drug_id,
+    all_input.name,
+    all_input.generic_name,
+    all_input.drug_class,
+    all_input.approval_status,
+    all_input.black_box_warning,
+    all_input.pregnancy_category
+  ];
+  PRINT side_effects [
+    side_effects.effect_id,
+    side_effects.name,
+    side_effects.severity,
+    side_effects.frequency,
+    side_effects.reversible
   ];
   PRINT @@interaction_edges;
+  PRINT @@dangerous_pairs;
+  PRINT @@side_effect_freq;
+  PRINT @@shared_gene_targets;
 }

@@ -1,110 +1,395 @@
-// MedGraph AI — TigerGraph Schema
-// Healthcare Knowledge Graph
-
-// ─── Drop existing graph (idempotent) ───────────────────────────────────────
+// ╔══════════════════════════════════════════════════════════════════════════════╗
+// ║   MedGraph AI v2.0 — TigerGraph Schema                                     ║
+// ║   Healthcare Knowledge Graph — National Hackathon Edition                  ║
+// ║   13 Vertex Types · 29 Edge Types                                          ║
+// ╚══════════════════════════════════════════════════════════════════════════════╝
+//
+// HOW TO RESET (fresh install):
+//   Uncomment the DROP block below, run once, then recomment and run again.
+//
 // USE GLOBAL
+// DROP GRAPH MedGraph
+// DROP VERTEX Disease, Symptom, Drug, SideEffect, Gene, Patient
+// DROP VERTEX BodySystem, MedicalTest, Biomarker, RiskFactor, Pathway, DrugClass, Procedure
 
-// ─── Vertex Types ────────────────────────────────────────────────────────────
+// ════════════════════════════════════════════════════════════════════════════════
+// VERTEX TYPES
+// ════════════════════════════════════════════════════════════════════════════════
+
+// ── Core Clinical Entities ────────────────────────────────────────────────────
+
 CREATE VERTEX Disease (
-  PRIMARY_ID disease_id STRING,
-  name STRING,
-  icd_code STRING,
-  severity STRING,
-  description STRING,
-  category STRING
+  PRIMARY_ID disease_id    STRING,
+  name                     STRING DEFAULT "",
+  icd10_code               STRING DEFAULT "",
+  snomed_code              STRING DEFAULT "",
+  omim_id                  STRING DEFAULT "",
+  severity                 STRING DEFAULT "unknown",     // mild|moderate|severe|critical
+  category                 STRING DEFAULT "",            // Cardiovascular|Neurological|…
+  description              STRING DEFAULT "",
+  prevalence_per_100k      FLOAT  DEFAULT 0.0,
+  mortality_rate           FLOAT  DEFAULT 0.0,           // 0.0–1.0
+  onset_type               STRING DEFAULT "",            // acute|chronic|subacute
+  is_hereditary            BOOL   DEFAULT FALSE,
+  is_contagious            BOOL   DEFAULT FALSE,
+  treatment_complexity     INT    DEFAULT 1              // 1–5 scale
 ) WITH STATS="OUTDEGREE_BY_EDGETYPE", PRIMARY_ID_AS_ATTRIBUTE="true"
 
 CREATE VERTEX Symptom (
-  PRIMARY_ID symptom_id STRING,
-  name STRING,
-  body_system STRING,
-  severity_weight FLOAT
+  PRIMARY_ID symptom_id    STRING,
+  name                     STRING DEFAULT "",
+  body_system              STRING DEFAULT "",
+  severity_weight          FLOAT  DEFAULT 0.5,           // 0.0–1.0
+  onset_pattern            STRING DEFAULT "",            // sudden|gradual|episodic
+  duration_pattern         STRING DEFAULT "",            // transient|persistent|recurrent
+  is_pathognomonic         BOOL   DEFAULT FALSE          // uniquely identifies a disease
 ) WITH STATS="OUTDEGREE_BY_EDGETYPE", PRIMARY_ID_AS_ATTRIBUTE="true"
 
 CREATE VERTEX Drug (
-  PRIMARY_ID drug_id STRING,
-  name STRING,
-  drug_class STRING,
-  approval_status STRING,
-  generic_name STRING
+  PRIMARY_ID drug_id       STRING,
+  name                     STRING DEFAULT "",
+  generic_name             STRING DEFAULT "",
+  drug_class               STRING DEFAULT "",
+  approval_status          STRING DEFAULT "",            // approved|investigational|withdrawn
+  molecular_formula        STRING DEFAULT "",
+  half_life_hours          FLOAT  DEFAULT 0.0,
+  route                    STRING DEFAULT "",            // oral|IV|topical|inhaled|…
+  pregnancy_category       STRING DEFAULT "",            // A|B|C|D|X
+  black_box_warning        BOOL   DEFAULT FALSE,
+  max_daily_dose_mg        FLOAT  DEFAULT 0.0,
+  controlled_substance     BOOL   DEFAULT FALSE
 ) WITH STATS="OUTDEGREE_BY_EDGETYPE", PRIMARY_ID_AS_ATTRIBUTE="true"
 
 CREATE VERTEX SideEffect (
-  PRIMARY_ID effect_id STRING,
-  name STRING,
-  severity STRING
+  PRIMARY_ID effect_id     STRING,
+  name                     STRING DEFAULT "",
+  severity                 STRING DEFAULT "",            // mild|moderate|severe|life-threatening
+  frequency                STRING DEFAULT "",            // very_common|common|uncommon|rare|very_rare
+  onset_time               STRING DEFAULT "",            // immediate|early|delayed
+  reversible               BOOL   DEFAULT TRUE,
+  body_system              STRING DEFAULT ""
 ) WITH STATS="OUTDEGREE_BY_EDGETYPE", PRIMARY_ID_AS_ATTRIBUTE="true"
 
 CREATE VERTEX Gene (
-  PRIMARY_ID gene_id STRING,
-  name STRING,
-  chromosome STRING,
-  function_desc STRING
+  PRIMARY_ID gene_id       STRING,
+  name                     STRING DEFAULT "",
+  symbol                   STRING DEFAULT "",            // e.g. CYP2D6
+  chromosome               STRING DEFAULT "",
+  gene_type                STRING DEFAULT "",            // protein_coding|regulatory|…
+  function_desc            STRING DEFAULT "",
+  omim_id                  STRING DEFAULT "",
+  uniprot_id               STRING DEFAULT ""
 ) WITH STATS="OUTDEGREE_BY_EDGETYPE", PRIMARY_ID_AS_ATTRIBUTE="true"
 
 CREATE VERTEX Patient (
-  PRIMARY_ID patient_id STRING,
-  name STRING,
-  age INT,
-  gender STRING,
-  blood_type STRING
+  PRIMARY_ID patient_id    STRING,
+  name                     STRING DEFAULT "",
+  age                      INT    DEFAULT 0,
+  gender                   STRING DEFAULT "",
+  blood_type               STRING DEFAULT "",
+  bmi                      FLOAT  DEFAULT 0.0,
+  smoking_status           STRING DEFAULT "",            // never|former|current
+  alcohol_use              STRING DEFAULT "",            // none|moderate|heavy
+  ethnicity                STRING DEFAULT "",
+  zip_code                 STRING DEFAULT ""
 ) WITH STATS="OUTDEGREE_BY_EDGETYPE", PRIMARY_ID_AS_ATTRIBUTE="true"
 
-// ─── Edge Types ───────────────────────────────────────────────────────────────
+// ── New Supporting Entities ───────────────────────────────────────────────────
+
+CREATE VERTEX BodySystem (
+  PRIMARY_ID system_id     STRING,
+  name                     STRING DEFAULT "",            // Cardiovascular|Respiratory|…
+  description              STRING DEFAULT ""
+) WITH STATS="OUTDEGREE_BY_EDGETYPE", PRIMARY_ID_AS_ATTRIBUTE="true"
+
+CREATE VERTEX MedicalTest (
+  PRIMARY_ID test_id       STRING,
+  name                     STRING DEFAULT "",
+  test_type                STRING DEFAULT "",            // blood|imaging|biopsy|functional
+  description              STRING DEFAULT "",
+  cost_usd                 FLOAT  DEFAULT 0.0,
+  turnaround_hours         INT    DEFAULT 0,
+  is_invasive              BOOL   DEFAULT FALSE
+) WITH STATS="OUTDEGREE_BY_EDGETYPE", PRIMARY_ID_AS_ATTRIBUTE="true"
+
+CREATE VERTEX Biomarker (
+  PRIMARY_ID biomarker_id  STRING,
+  name                     STRING DEFAULT "",
+  unit                     STRING DEFAULT "",
+  normal_range_low         FLOAT  DEFAULT 0.0,
+  normal_range_high        FLOAT  DEFAULT 0.0,
+  biomarker_type           STRING DEFAULT ""             // lab|imaging|genomic|clinical
+) WITH STATS="OUTDEGREE_BY_EDGETYPE", PRIMARY_ID_AS_ATTRIBUTE="true"
+
+CREATE VERTEX RiskFactor (
+  PRIMARY_ID risk_id       STRING,
+  name                     STRING DEFAULT "",
+  category                 STRING DEFAULT "",            // lifestyle|environmental|genetic|demographic
+  modifiable               BOOL   DEFAULT TRUE,
+  description              STRING DEFAULT ""
+) WITH STATS="OUTDEGREE_BY_EDGETYPE", PRIMARY_ID_AS_ATTRIBUTE="true"
+
+CREATE VERTEX Pathway (
+  PRIMARY_ID pathway_id    STRING,
+  name                     STRING DEFAULT "",
+  pathway_type             STRING DEFAULT "",            // metabolic|signaling|regulatory
+  description              STRING DEFAULT "",
+  kegg_id                  STRING DEFAULT "",
+  reactome_id              STRING DEFAULT ""
+) WITH STATS="OUTDEGREE_BY_EDGETYPE", PRIMARY_ID_AS_ATTRIBUTE="true"
+
+CREATE VERTEX DrugClass (
+  PRIMARY_ID class_id      STRING,
+  name                     STRING DEFAULT "",
+  mechanism                STRING DEFAULT "",
+  description              STRING DEFAULT ""
+) WITH STATS="OUTDEGREE_BY_EDGETYPE", PRIMARY_ID_AS_ATTRIBUTE="true"
+
+CREATE VERTEX Procedure (
+  PRIMARY_ID procedure_id  STRING,
+  name                     STRING DEFAULT "",
+  procedure_type           STRING DEFAULT "",            // surgical|therapeutic|diagnostic
+  description              STRING DEFAULT "",
+  cpt_code                 STRING DEFAULT "",
+  avg_duration_hours       FLOAT  DEFAULT 0.0,
+  requires_anesthesia      BOOL   DEFAULT FALSE
+) WITH STATS="OUTDEGREE_BY_EDGETYPE", PRIMARY_ID_AS_ATTRIBUTE="true"
+
+
+// ════════════════════════════════════════════════════════════════════════════════
+// EDGE TYPES
+// ════════════════════════════════════════════════════════════════════════════════
+
+// ── Disease ↔ Symptom ─────────────────────────────────────────────────────────
 CREATE UNDIRECTED EDGE HAS_SYMPTOM (
   FROM Disease, TO Symptom,
-  frequency STRING,
-  weight FLOAT
+  frequency      STRING DEFAULT "",    // always|often|sometimes|rarely
+  weight         FLOAT  DEFAULT 0.5,
+  onset_timing   STRING DEFAULT ""     // early|late|variable
 )
 
+// ── Disease ↔ Disease ─────────────────────────────────────────────────────────
+CREATE UNDIRECTED EDGE COMORBID_WITH (
+  FROM Disease, TO Disease,
+  comorbidity_rate   FLOAT  DEFAULT 0.0,
+  evidence_source    STRING DEFAULT ""
+)
+
+CREATE DIRECTED EDGE PROGRESSES_TO (
+  FROM Disease, TO Disease,
+  progression_rate      FLOAT  DEFAULT 0.0,   // probability without treatment
+  avg_years_to_progress FLOAT  DEFAULT 0.0,
+  prevention_possible   BOOL   DEFAULT TRUE
+)
+
+// ── Disease ↔ Test / Biomarker ────────────────────────────────────────────────
+CREATE DIRECTED EDGE DIAGNOSED_BY (
+  FROM Disease, TO MedicalTest,
+  is_gold_standard   BOOL  DEFAULT FALSE,
+  sensitivity        FLOAT DEFAULT 0.0,
+  specificity        FLOAT DEFAULT 0.0
+)
+
+CREATE DIRECTED EDGE MONITORED_VIA (
+  FROM Disease, TO Biomarker,
+  monitoring_frequency  STRING DEFAULT "",
+  critical_threshold    FLOAT  DEFAULT 0.0
+)
+
+CREATE DIRECTED EDGE ELEVATES_BIOMARKER (
+  FROM Disease, TO Biomarker,
+  elevation_factor  FLOAT  DEFAULT 1.0,
+  directionality    STRING DEFAULT "up"   // up|down|variable
+)
+
+// ── Drug ↔ Disease ────────────────────────────────────────────────────────────
 CREATE DIRECTED EDGE TREATS (
   FROM Drug, TO Disease,
-  efficacy_score FLOAT,
-  evidence_level STRING
+  efficacy_score         FLOAT  DEFAULT 0.0,   // 0.0–1.0
+  evidence_level         STRING DEFAULT "",    // A|B|C|D
+  first_line             BOOL   DEFAULT FALSE,
+  treatment_duration_days INT   DEFAULT 0
 )
 
-CREATE DIRECTED EDGE CAUSES_SIDE_EFFECT (
-  FROM Drug, TO SideEffect,
-  probability FLOAT
+CREATE DIRECTED EDGE CONTRAINDICATED_IN (
+  FROM Drug, TO Disease,
+  reason     STRING DEFAULT "",
+  severity   STRING DEFAULT ""    // absolute|relative
 )
 
+// ── Drug ↔ Drug ───────────────────────────────────────────────────────────────
 CREATE UNDIRECTED EDGE INTERACTS_WITH (
   FROM Drug, TO Drug,
-  interaction_type STRING,
-  severity STRING
+  interaction_type  STRING DEFAULT "",   // pharmacokinetic|pharmacodynamic
+  severity          STRING DEFAULT "",   // minor|moderate|major|dangerous
+  mechanism         STRING DEFAULT "",
+  clinical_effect   STRING DEFAULT ""
 )
 
+// ── Drug ↔ Side Effect ────────────────────────────────────────────────────────
+CREATE DIRECTED EDGE CAUSES_SIDE_EFFECT (
+  FROM Drug, TO SideEffect,
+  probability     FLOAT DEFAULT 0.0,
+  dose_dependent  BOOL  DEFAULT TRUE
+)
+
+// ── Drug ↔ Gene ───────────────────────────────────────────────────────────────
 CREATE DIRECTED EDGE TARGETS_GENE (
   FROM Drug, TO Gene,
-  mechanism STRING
+  mechanism          STRING DEFAULT "",   // inhibitor|activator|modulator
+  binding_affinity   FLOAT  DEFAULT 0.0
 )
 
+CREATE DIRECTED EDGE METABOLIZED_BY (
+  FROM Drug, TO Gene,
+  metabolism_type       STRING DEFAULT "",   // substrate|inhibitor|inducer
+  impact_on_efficacy    STRING DEFAULT ""    // reduced|increased|none
+)
+
+// ── Drug ↔ DrugClass ──────────────────────────────────────────────────────────
+CREATE DIRECTED EDGE BELONGS_TO_CLASS (
+  FROM Drug, TO DrugClass,
+  is_prototype  BOOL DEFAULT FALSE
+)
+
+// ── Drug ↔ Biomarker ──────────────────────────────────────────────────────────
+CREATE DIRECTED EDGE REQUIRES_MONITORING (
+  FROM Drug, TO Biomarker,
+  monitoring_interval_days  INT    DEFAULT 0,
+  reason                    STRING DEFAULT ""
+)
+
+// ── Gene ↔ Disease ────────────────────────────────────────────────────────────
 CREATE DIRECTED EDGE ASSOCIATED_WITH (
   FROM Gene, TO Disease,
-  evidence_strength FLOAT
+  evidence_strength   FLOAT  DEFAULT 0.0,   // 0.0–1.0
+  association_type    STRING DEFAULT "",    // risk|protective|causative
+  variant             STRING DEFAULT ""
 )
 
+// ── Gene ↔ Pathway ────────────────────────────────────────────────────────────
+CREATE DIRECTED EDGE INVOLVED_IN (
+  FROM Gene, TO Pathway,
+  role  STRING DEFAULT ""   // catalyst|substrate|regulator
+)
+
+// ── Disease ↔ Pathway ─────────────────────────────────────────────────────────
+CREATE DIRECTED EDGE DISRUPTS_PATHWAY (
+  FROM Disease, TO Pathway,
+  disruption_type  STRING DEFAULT ""   // upregulation|downregulation|mutation
+)
+
+// ── Symptom ↔ Symptom ─────────────────────────────────────────────────────────
+CREATE UNDIRECTED EDGE SYMPTOM_OVERLAP (
+  FROM Symptom, TO Symptom,
+  correlation_score  FLOAT DEFAULT 0.0
+)
+
+// ── Symptom / Disease ↔ BodySystem ───────────────────────────────────────────
+CREATE DIRECTED EDGE AFFECTS_SYSTEM (
+  FROM Disease, TO BodySystem,
+  is_primary  BOOL DEFAULT TRUE
+)
+
+CREATE DIRECTED EDGE ORIGINATES_FROM (
+  FROM Symptom, TO BodySystem,
+  is_primary  BOOL DEFAULT TRUE
+)
+
+// ── RiskFactor ↔ Disease ──────────────────────────────────────────────────────
+CREATE DIRECTED EDGE INCREASES_RISK (
+  FROM RiskFactor, TO Disease,
+  relative_risk   FLOAT  DEFAULT 1.0,   // >1 = increased risk
+  evidence_level  STRING DEFAULT "",
+  dose_response   BOOL   DEFAULT FALSE
+)
+
+// ── Disease ↔ Procedure ───────────────────────────────────────────────────────
+CREATE DIRECTED EDGE TREATED_BY_PROCEDURE (
+  FROM Disease, TO Procedure,
+  success_rate    FLOAT  DEFAULT 0.0,
+  evidence_level  STRING DEFAULT ""
+)
+
+// ── Patient Edges ─────────────────────────────────────────────────────────────
 CREATE DIRECTED EDGE DIAGNOSED_WITH (
   FROM Patient, TO Disease,
-  diagnosis_date DATETIME,
-  status STRING
+  diagnosis_date   DATETIME,
+  status           STRING DEFAULT "",   // active|resolved|chronic|in_remission
+  confirmed_by     STRING DEFAULT ""
 )
 
 CREATE DIRECTED EDGE TAKES_DRUG (
   FROM Patient, TO Drug,
-  dosage STRING,
-  start_date DATETIME
+  dosage          STRING   DEFAULT "",
+  frequency       STRING   DEFAULT "",
+  start_date      DATETIME,
+  end_date        DATETIME,
+  prescribed_for  STRING   DEFAULT ""
 )
 
-CREATE UNDIRECTED EDGE SYMPTOM_OVERLAP (
-  FROM Symptom, TO Symptom,
-  correlation_score FLOAT
+CREATE DIRECTED EDGE HAS_RISK_FACTOR (
+  FROM Patient, TO RiskFactor,
+  severity_level  STRING   DEFAULT "",
+  since_date      DATETIME
 )
 
-// ─── Graph ────────────────────────────────────────────────────────────────────
+CREATE DIRECTED EDGE ALLERGIC_TO (
+  FROM Patient, TO Drug,
+  reaction_type  STRING DEFAULT "",   // anaphylaxis|rash|GI|…
+  severity       STRING DEFAULT "",
+  verified       BOOL   DEFAULT FALSE
+)
+
+CREATE DIRECTED EDGE UNDERWENT_PROCEDURE (
+  FROM Patient, TO Procedure,
+  procedure_date  DATETIME,
+  outcome         STRING DEFAULT ""
+)
+
+CREATE DIRECTED EDGE TOOK_TEST (
+  FROM Patient, TO MedicalTest,
+  test_date       DATETIME,
+  result_summary  STRING DEFAULT "",
+  abnormal        BOOL   DEFAULT FALSE
+)
+
+CREATE DIRECTED EDGE HAS_VARIANT (
+  FROM Patient, TO Gene,
+  genotype   STRING DEFAULT "",   // e.g. CYP2D6*2/*4
+  phenotype  STRING DEFAULT "",   // poor_metabolizer|intermediate|normal|ultra_rapid
+  verified   BOOL   DEFAULT FALSE
+)
+
+
+// ════════════════════════════════════════════════════════════════════════════════
+// GRAPH DEFINITION
+// 13 Vertex Types · 29 Edge Types
+// ════════════════════════════════════════════════════════════════════════════════
+
 CREATE GRAPH MedGraph (
+  // Vertices
   Disease, Symptom, Drug, SideEffect, Gene, Patient,
+  BodySystem, MedicalTest, Biomarker, RiskFactor, Pathway, DrugClass, Procedure,
+
+  // Original edges
   HAS_SYMPTOM, TREATS, CAUSES_SIDE_EFFECT, INTERACTS_WITH,
-  TARGETS_GENE, ASSOCIATED_WITH, DIAGNOSED_WITH, TAKES_DRUG,
-  SYMPTOM_OVERLAP
+  TARGETS_GENE, ASSOCIATED_WITH, DIAGNOSED_WITH, TAKES_DRUG, SYMPTOM_OVERLAP,
+
+  // New edges — Disease relationships
+  COMORBID_WITH, PROGRESSES_TO, DIAGNOSED_BY, MONITORED_VIA,
+  ELEVATES_BIOMARKER, CONTRAINDICATED_IN, AFFECTS_SYSTEM, DISRUPTS_PATHWAY,
+  TREATED_BY_PROCEDURE,
+
+  // New edges — Drug relationships
+  METABOLIZED_BY, BELONGS_TO_CLASS, REQUIRES_MONITORING,
+
+  // New edges — Gene / Pathway
+  INVOLVED_IN,
+
+  // New edges — RiskFactor / BodySystem / Symptom
+  INCREASES_RISK, ORIGINATES_FROM,
+
+  // New edges — Patient relationships
+  HAS_RISK_FACTOR, ALLERGIC_TO, UNDERWENT_PROCEDURE, TOOK_TEST, HAS_VARIANT
 )
