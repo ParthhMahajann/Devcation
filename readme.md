@@ -207,12 +207,12 @@ The graph is designed to handle:
 
 Built for **Devcation** hackathon by the **Arogya AI Team**.
 
-| Role | Responsibilities |
-|---|---|
-| Graph Engineer / Backend Lead | TigerGraph schema, GSQL queries, pyTigerGraph integration |
-| Backend API Developer | FastAPI endpoints, Pydantic models, Swagger docs |
-| Frontend Developer | React UI, graph visualization, dashboard, UX |
-| Data + Presentation Lead | Data sourcing/cleaning, PPT, demo video, documentation |
+| Name | Role | Responsibilities |
+|---|---|---|
+| **Manish Srivastav** | Graph Engineer / Backend Lead | TigerGraph schema, GSQL queries, pyTigerGraph integration |
+| **Parth Mahajan** | Backend API Developer | FastAPI endpoints, Pydantic models, Swagger docs |
+| **Aakash Sarang** | Frontend Developer | React UI, graph visualization, dashboard, UX |
+| **Krishiv Sharma** | Data + Presentation Lead | Data sourcing/cleaning, PPT, demo video, documentation |
 
 ---
 
