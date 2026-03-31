@@ -7,13 +7,13 @@ import os
 import pyTigerGraph as tg
 
 # ─── Config ──────────────────────────────────────────────────────────────────
-HOST      = os.getenv("TG_HOST",      "https://tg-361a97df-0a30-49f7-a48b-d6d17a66a07c.tg-3452941248.i.tgcloud.io")
-SECRET    = os.getenv("TG_SECRET",    "21Krw_szE1qHBiNWa5skCubiw5UNUqBTgOUaDwsc")
+HOST      = os.getenv("TG_HOST",      "http://127.0.0.1")
+SECRET    = os.getenv("TG_SECRET",    "")
 USERNAME  = os.getenv("TG_USERNAME",  "tigergraph")
-PASSWORD  = os.getenv("TG_PASSWORD",  "")
+PASSWORD  = os.getenv("TG_PASSWORD",  "tigergraph")
 GRAPH     = os.getenv("TG_GRAPHNAME", "MedGraph")
-GS_PORT   = os.getenv("TG_GS_PORT",  "443")
-RESTPP    = os.getenv("TG_RESTPP_PORT", "443")
+GS_PORT   = os.getenv("TG_GS_PORT",  "14240")
+RESTPP    = os.getenv("TG_RESTPP_PORT", "9000")
 
 SCHEMA_FILE  = os.path.join(os.path.dirname(__file__), "schema", "create_schema.gsql")
 QUERIES_DIR  = os.path.join(os.path.dirname(__file__), "queries")
@@ -43,11 +43,19 @@ def connect():
         username=USERNAME,
         password=PASSWORD,
     )
-    try:
-        token = conn.getToken(SECRET)
-        print(f"  Token obtained: {str(token)[:30]}…")
-    except Exception as e:
-        print(f"  Warning: could not get token: {e}")
+    if SECRET:
+        try:
+            token = conn.getToken(SECRET)
+            print(f"  Token obtained: {str(token)[:30]}…")
+        except Exception as e:
+            print(f"  Warning: could not get token: {e}")
+    else:
+        try:
+            secret = conn.createSecret()
+            token  = conn.getToken(secret)
+            print(f"  Token obtained via new secret.")
+        except Exception as e:
+            print(f"  Warning: could not obtain token: {e}")
     return conn
 
 
@@ -95,11 +103,6 @@ def step_install(conn):
 
 
 def main():
-    if not PASSWORD:
-        print("ERROR: TG_PASSWORD is not set.")
-        print("Run:  TG_PASSWORD=yourpassword python tigergraph/setup.py")
-        sys.exit(1)
-
     conn = connect()
     schema_ok = step_schema(conn)
     if not schema_ok:

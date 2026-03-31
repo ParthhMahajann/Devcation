@@ -17,11 +17,19 @@ class TigerGraphService:
                 username=settings.tg_username,
                 password=settings.tg_password,
             )
+            # Token acquisition: API token > explicit secret > auto-create secret
             if settings.tg_api_token:
                 self.conn.apiToken = settings.tg_api_token
+            elif settings.tg_secret:
+                self.conn.getToken(settings.tg_secret)
             else:
-                self.conn.getToken(self.conn.createSecret())
-            logger.info("TigerGraph connection established")
+                try:
+                    secret = self.conn.createSecret()
+                    self.conn.getToken(secret)
+                except Exception as token_err:
+                    # Local CE may not require a token — proceed without one
+                    logger.warning(f"Token acquisition skipped: {token_err}")
+            logger.info(f"TigerGraph connected → {settings.tg_host}/{settings.tg_graph}")
         except Exception as e:
             logger.error(f"TigerGraph connection failed: {e}")
             self.conn = None

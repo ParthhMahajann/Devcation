@@ -1,0 +1,64 @@
+version: "3.9"
+
+# ╔══════════════════════════════════════════════════════════════╗
+# ║  MedGraph AI — Local Stack                                  ║
+# ║  TigerGraph CE 4.x + FastAPI backend                       ║
+# ╚══════════════════════════════════════════════════════════════╝
+#
+# FIRST TIME SETUP:
+#   1. Install Docker Desktop for Windows → https://docs.docker.com/desktop/install/windows/
+#      (Enable WSL2 backend when prompted)
+#   2. docker compose up -d
+#   3. Wait ~90 seconds for TigerGraph to initialise
+#   4. python tigergraph/setup.py      # create schema + install queries
+#   5. python tigergraph/seed_data.py  # load sample data
+#   6. docker compose up backend       # start FastAPI
+
+services:
+
+  tigergraph:
+    image: docker.io/tigergraph/tigergraph:4.1.0
+    container_name: medgraph-tg
+    hostname: tigergraph
+    ports:
+      - "9000:9000"    # REST++ API
+      - "14240:14240"  # GraphStudio / GSQL
+    environment:
+      - TG_LICENSE_KEY=          # leave blank for Community Edition
+    volumes:
+      - tg_data:/home/tigergraph/tigergraph/data
+    ulimits:
+      nofile:
+        soft: 1000000
+        hard: 1000000
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:9000/echo"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 90s
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: medgraph-api
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - TG_HOST=http://tigergraph
+      - TG_RESTPP_PORT=9000
+      - TG_GS_PORT=14240
+      - TG_USERNAME=tigergraph
+      - TG_PASSWORD=tigergraph
+      - TG_GRAPHNAME=MedGraph
+    depends_on:
+      tigergraph:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  tg_data:

@@ -1,12 +1,12 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import symptoms, drugs, patients, graph
+from app.routers import symptoms, drugs, patients, graph, analysis
 
 app = FastAPI(
     title="MedGraph AI API",
     description="Healthcare Knowledge Graph powered by TigerGraph",
-    version="1.0.0",
+    version="2.0.0",
 )
 
 app.add_middleware(
@@ -17,10 +17,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(symptoms.router, prefix="/api/symptoms", tags=["symptoms"])
-app.include_router(drugs.router,    prefix="/api/drugs",    tags=["drugs"])
-app.include_router(patients.router, prefix="/api/patients", tags=["patients"])
-app.include_router(graph.router,    prefix="/api/graph",    tags=["graph"])
+app.include_router(symptoms.router,  prefix="/api/symptoms",  tags=["symptoms"])
+app.include_router(drugs.router,     prefix="/api/drugs",     tags=["drugs"])
+app.include_router(patients.router,  prefix="/api/patients",  tags=["patients"])
+app.include_router(graph.router,     prefix="/api/graph",     tags=["graph"])
+app.include_router(analysis.router,  prefix="/api/patients",  tags=["analysis"])
 
 
 @app.get("/")
