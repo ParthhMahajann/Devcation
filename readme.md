@@ -1,4 +1,4 @@
-# 🧠 MedGraph AI
+# 🧠 Grph AI
 
 > **A Medical Knowledge Graph Platform** — AI-powered symptom diagnosis, drug interaction detection, and patient risk assessment using TigerGraph.
 
