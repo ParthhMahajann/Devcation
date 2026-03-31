@@ -1,4 +1,4 @@
-# 🧠 Grph AI
+# 🧠 Arogya AI
 
 > **A Medical Knowledge Graph Platform** — AI-powered symptom diagnosis, drug interaction detection, and patient risk assessment using TigerGraph.
 
@@ -8,9 +8,9 @@
 
 ---
 
-## 🚀 What is MedGraph AI?
+## 🚀 What is Arogya AI?
 
-MedGraph AI is a full-stack medical intelligence platform built on top of a **graph database**. It models the complex relationships between diseases, symptoms, drugs, genes, side effects, and patients — then lets you query those relationships in real time.
+Arogya AI is a full-stack medical intelligence platform built on top of a **graph database**. It models the complex relationships between diseases, symptoms, drugs, genes, side effects, and patients — then lets you query those relationships in real time.
 
 Instead of flat tables, we use **graph traversal** to answer questions like:
 - *"A patient has fever, fatigue, and chest pain — what diseases match?"*
@@ -183,7 +183,7 @@ uvicorn app.main:app --reload   # Runs on http://localhost:8000
 
 ### TigerGraph
 
-1. Create a graph named `MedGraph` on your TigerGraph instance
+1. Create a graph named `ArogyaAI` on your TigerGraph instance
 2. Run the GSQL schema creation scripts from `ARCHITECTURE.md`
 3. Load CSV data from `data/processed/` using the provided loading jobs
 4. Install the GSQL queries
@@ -205,7 +205,7 @@ The graph is designed to handle:
 
 ## 👥 Team
 
-Built for **Devcation** hackathon by the **MedGraph AI Team**.
+Built for **Devcation** hackathon by the **Arogya AI Team**.
 
 | Role | Responsibilities |
 |---|---|
@@ -222,4 +222,4 @@ This project is licensed under the [MIT License](LICENSE).
 
 ---
 
-> ⚠️ **Disclaimer:** MedGraph AI is a research and demonstration tool built for a hackathon. It is **not** intended for real clinical use. Always consult a qualified medical professional for health decisions.
+> ⚠️ **Disclaimer:** Arogya AI is a research and demonstration tool built for a hackathon. It is **not** intended for real clinical use. Always consult a qualified medical professional for health decisions.
