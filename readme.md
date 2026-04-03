@@ -209,8 +209,8 @@ Built for **Devcation** hackathon by the **Arogya AI Team**.
 
 | Name | Role | Responsibilities |
 |---|---|---|
-| **Manish Srivastav** | Graph Engineer / Backend Lead | TigerGraph schema, GSQL queries, pyTigerGraph integration |
-| **Parth Mahajan** | Backend API Developer | FastAPI endpoints, Pydantic models, Swagger docs |
+| **Manish Srivastav** |  Team Lead | Pydantic models, Swagger docs, pyTigerGraph integration|
+| **Parth Mahajan** | Graph Engineer / Backend API Developer | TigerGraph schema, FastAPI endpoints, GSQL queries, pyTigerGraph integration |
 | **Aakash Sarang** | Frontend Developer | React UI, graph visualization, dashboard, UX |
 | **Krishiv Sharma** | Data + Presentation Lead | Data sourcing/cleaning, PPT, demo video, documentation |
 
