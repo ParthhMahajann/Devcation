@@ -1,27 +1,27 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
 
 
 # ─── Request Models ────────────────────────────────────────────────────────────
 
 class DiagnoseRequest(BaseModel):
-    symptoms: List[str]
+    symptoms: List[str] = Field(..., min_length=1, max_length=50)
 
 class DrugInteractionRequest(BaseModel):
-    drug_names: List[str]
+    drug_names: List[str] = Field(..., min_length=2, max_length=20)
 
 class PatientCreate(BaseModel):
-    patient_id: str
-    name: str
-    age: int
-    gender: str
-    blood_type: str
+    patient_id: str = Field(..., min_length=1, max_length=50, pattern=r'^[A-Za-z0-9_-]+$')
+    name: str = Field(..., min_length=1, max_length=100)
+    age: int = Field(..., ge=0, le=150)
+    gender: str = Field(..., pattern=r'^(Male|Female|Other)$')
+    blood_type: str = Field(..., max_length=10)
 
 class GraphExploreRequest(BaseModel):
     center_type: Optional[str] = None
     center_id: Optional[str] = None
-    max_hops: int = 2
-    limit_per_hop: int = 20
+    max_hops: int = Field(2, ge=1, le=5)
+    limit_per_hop: int = Field(20, ge=5, le=100)
 
 
 # ─── Response Models ───────────────────────────────────────────────────────────

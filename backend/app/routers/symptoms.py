@@ -1,14 +1,18 @@
-from fastapi import APIRouter, Depends
+import logging
+from fastapi import APIRouter, Depends, Request
 from app.models.schemas import DiagnoseRequest, DiagnoseResponse, DiseaseResult
 from app.services.tigergraph_service import TigerGraphService
 from app.dependencies import get_tg_service
+from app.limiter import limiter
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
 @router.post("/diagnose", response_model=DiagnoseResponse)
-def diagnose(request: DiagnoseRequest, tg: TigerGraphService = Depends(get_tg_service)):
-    raw = tg.diagnose(request.symptoms)
+@limiter.limit("30/minute")
+def diagnose(request: Request, body: DiagnoseRequest, tg: TigerGraphService = Depends(get_tg_service)):
+    raw = tg.diagnose(body.symptoms)
     diseases = []
     if raw and len(raw) > 0:
         raw_diseases = raw[0].get("diseases", [])

@@ -3,14 +3,19 @@ import axios from 'axios'
 const client = axios.create({
   baseURL: import.meta.env.VITE_API_URL || 'http://localhost:8000',
   timeout: 30000,
-  headers: { 'Content-Type': 'application/json' },
+  headers: {
+    'Content-Type': 'application/json',
+    'X-API-Key': import.meta.env.VITE_API_KEY || 'dev-insecure-key-change-me',
+  },
 })
 
 client.interceptors.response.use(
   (res) => res,
   (err) => {
-    console.error('API error:', err.response?.data || err.message)
-    return Promise.reject(err)
+    const detail = err.response?.data?.detail || err.message
+    const error = new Error(detail)
+    error.status = err.response?.status
+    return Promise.reject(error)
   }
 )
 

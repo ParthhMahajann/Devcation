@@ -1,8 +1,16 @@
-import pyTigerGraph as tg
-from app.config import get_settings
 import logging
+import pyTigerGraph as tg
+from fastapi import HTTPException
+from app.config import get_settings
 
 logger = logging.getLogger(__name__)
+
+
+def _db_unavailable():
+    """Raise 503 or return False (to signal mock mode)."""
+    if get_settings().use_mock_data:
+        return True   # caller should use mock data
+    raise HTTPException(status_code=503, detail="Database unavailable — TigerGraph is not connected")
 
 
 class TigerGraphService:
@@ -28,41 +36,41 @@ class TigerGraphService:
                     self.conn.getToken(secret)
                 except Exception as token_err:
                     # Local CE may not require a token — proceed without one
-                    logger.warning(f"Token acquisition skipped: {token_err}")
-            logger.info(f"TigerGraph connected → {settings.tg_host}/{settings.tg_graph}")
+                    logger.warning("Token acquisition skipped: %s", token_err)
+            logger.info("TigerGraph connected → %s/%s", settings.tg_host, settings.tg_graph)
         except Exception as e:
-            logger.error(f"TigerGraph connection failed: {e}")
+            logger.error("TigerGraph connection failed: %s", e)
             self.conn = None
 
     # ─── Diagnosis ─────────────────────────────────────────────────────────────
 
     def diagnose(self, symptoms: list[str]) -> dict:
         if not self.conn:
-            return self._mock_diagnose(symptoms)
+            if _db_unavailable():
+                return self._mock_diagnose(symptoms)
         try:
-            result = self.conn.runInstalledQuery(
+            return self.conn.runInstalledQuery(
                 "diagnose_from_symptoms",
                 {"input_symptoms": symptoms}
             )
-            return result
         except Exception as e:
-            logger.error(f"diagnose query failed: {e}")
-            return self._mock_diagnose(symptoms)
+            logger.error("diagnose query failed: %s", e)
+            raise HTTPException(status_code=500, detail="Diagnosis query failed")
 
     # ─── Drug Interactions ──────────────────────────────────────────────────────
 
     def check_interactions(self, drug_names: list[str]) -> dict:
         if not self.conn:
-            return self._mock_interactions(drug_names)
+            if _db_unavailable():
+                return self._mock_interactions(drug_names)
         try:
-            result = self.conn.runInstalledQuery(
+            return self.conn.runInstalledQuery(
                 "check_drug_interactions",
                 {"drug_names": drug_names}
             )
-            return result
         except Exception as e:
-            logger.error(f"check_drug_interactions query failed: {e}")
-            return self._mock_interactions(drug_names)
+            logger.error("check_drug_interactions query failed: %s", e)
+            raise HTTPException(status_code=500, detail="Drug interaction query failed")
 
     # ─── Treatment Path ─────────────────────────────────────────────────────────
 
@@ -75,7 +83,7 @@ class TigerGraphService:
                 {"source_disease": disease_id}
             )
         except Exception as e:
-            logger.error(f"find_treatment_path query failed: {e}")
+            logger.error("find_treatment_path query failed for %s: %s", disease_id, e)
             return {}
 
     # ─── Patient Risk ───────────────────────────────────────────────────────────
@@ -89,20 +97,21 @@ class TigerGraphService:
                 {"p": patient_id}
             )
         except Exception as e:
-            logger.error(f"patient_risk_profile query failed: {e}")
+            logger.error("patient_risk_profile query failed for %s: %s", patient_id, e)
             return {}
 
     # ─── Graph Stats ────────────────────────────────────────────────────────────
 
     def get_stats(self) -> dict:
         if not self.conn:
-            return self._mock_stats()
+            if _db_unavailable():
+                return self._mock_stats()
         try:
             result = self.conn.runInstalledQuery("get_graph_stats", {})
             return result[0] if result else {}
         except Exception as e:
-            logger.error(f"get_graph_stats query failed: {e}")
-            return self._mock_stats()
+            logger.error("get_graph_stats query failed: %s", e)
+            raise HTTPException(status_code=500, detail="Graph stats query failed")
 
     # ─── Graph Explorer ─────────────────────────────────────────────────────────
 
@@ -126,8 +135,8 @@ class TigerGraphService:
                 }
             )
         except Exception as e:
-            logger.error(f"explore_subgraph query failed: {e}")
-            return {"nodes": [], "edges": []}
+            logger.error("explore_subgraph query failed: %s", e)
+            raise HTTPException(status_code=500, detail="Graph exploration query failed")
 
     # ─── Pharmacogenomics ────────────────────────────────────────────────────────
 
@@ -140,7 +149,7 @@ class TigerGraphService:
                 {"p": patient_id}
             )
         except Exception as e:
-            logger.error(f"pharmacogenomics_report query failed: {e}")
+            logger.error("pharmacogenomics_report query failed for %s: %s", patient_id, e)
             return {}
 
     # ─── Disease Progression ─────────────────────────────────────────────────────
@@ -154,7 +163,7 @@ class TigerGraphService:
                 {"p": patient_id, "max_depth": max_depth}
             )
         except Exception as e:
-            logger.error(f"disease_progression_risk query failed: {e}")
+            logger.error("disease_progression_risk query failed for %s: %s", patient_id, e)
             return {}
 
     # ─── Comorbidity Cluster ─────────────────────────────────────────────────────
@@ -168,7 +177,7 @@ class TigerGraphService:
                 {"seed_disease": disease_id, "max_hops": max_hops, "min_rate": min_rate}
             )
         except Exception as e:
-            logger.error(f"comorbidity_cluster query failed: {e}")
+            logger.error("comorbidity_cluster query failed for %s: %s", disease_id, e)
             return {}
 
     # ─── Contraindication Safety Check ───────────────────────────────────────────
@@ -182,49 +191,51 @@ class TigerGraphService:
                 {"p": patient_id, "proposed_drug_names": proposed_drugs}
             )
         except Exception as e:
-            logger.error(f"contraindication_safety_check query failed: {e}")
+            logger.error("contraindication_safety_check query failed for %s: %s", patient_id, e)
             return {}
 
     # ─── List helpers ───────────────────────────────────────────────────────────
 
     def list_symptoms(self) -> list:
         if not self.conn:
-            return self._mock_symptoms()
+            if _db_unavailable():
+                return self._mock_symptoms()
         try:
-            result = self.conn.getVertices("Symptom")
-            return result
+            return self.conn.getVertices("Symptom")
         except Exception as e:
-            logger.error(f"list_symptoms failed: {e}")
-            return self._mock_symptoms()
+            logger.error("list_symptoms failed: %s", e)
+            raise HTTPException(status_code=500, detail="Failed to list symptoms")
 
     def list_drugs(self) -> list:
         if not self.conn:
-            return self._mock_drugs()
+            if _db_unavailable():
+                return self._mock_drugs()
         try:
-            result = self.conn.getVertices("Drug")
-            return result
+            return self.conn.getVertices("Drug")
         except Exception as e:
-            logger.error(f"list_drugs failed: {e}")
-            return self._mock_drugs()
+            logger.error("list_drugs failed: %s", e)
+            raise HTTPException(status_code=500, detail="Failed to list drugs")
 
     # ─── Patient CRUD ────────────────────────────────────────────────────────────
 
     def get_patient(self, patient_id: str) -> dict:
         if not self.conn:
-            return {"patient_id": patient_id, "name": "Demo Patient", "age": 45,
-                    "conditions": [], "medications": [], "drug_interactions": []}
+            if _db_unavailable():
+                return {"patient_id": patient_id, "name": "Demo Patient", "age": 45,
+                        "conditions": [], "medications": [], "drug_interactions": []}
         try:
             vertices = self.conn.getVerticesById("Patient", patient_id)
             if not vertices:
-                raise ValueError(f"Patient {patient_id} not found")
+                return None
             return vertices[0]
         except Exception as e:
-            logger.error(f"get_patient failed: {e}")
-            raise
+            logger.error("get_patient failed for %s: %s", patient_id, e)
+            raise HTTPException(status_code=500, detail="Failed to fetch patient data")
 
     def upsert_patient(self, patient: dict) -> dict:
         if not self.conn:
-            return patient
+            if _db_unavailable():
+                return patient
         try:
             self.conn.upsertVertex(
                 "Patient",
@@ -233,10 +244,10 @@ class TigerGraphService:
             )
             return patient
         except Exception as e:
-            logger.error(f"upsert_patient failed: {e}")
-            return patient
+            logger.error("upsert_patient failed for %s: %s", patient.get("patient_id"), e)
+            raise HTTPException(status_code=500, detail="Failed to save patient data")
 
-    # ─── Mock data (fallback when TG is offline) ─────────────────────────────────
+    # ─── Mock data (dev fallback when USE_MOCK_DATA=true) ────────────────────────
 
     def _mock_diagnose(self, symptoms):
         return [{"diseases": [
@@ -253,24 +264,13 @@ class TigerGraphService:
 
     def _mock_stats(self):
         return {
-            "@@disease_count": 5247,
-            "@@symptom_count": 10392,
-            "@@drug_count": 3018,
-            "@@side_effect_count": 1784,
-            "@@gene_count": 512,
-            "@@patient_count": 100,
-            "@@body_system_count": 13,
-            "@@medical_test_count": 284,
-            "@@biomarker_count": 196,
-            "@@risk_factor_count": 87,
-            "@@pathway_count": 342,
-            "@@drug_class_count": 48,
-            "@@procedure_count": 213,
-            "@@has_symptom_count": 48291,
-            "@@treats_count": 9814,
-            "@@interacts_count": 4203,
-            "@@associated_count": 2917,
-            "@@comorbid_count": 3156,
+            "@@disease_count": 5247, "@@symptom_count": 10392, "@@drug_count": 3018,
+            "@@side_effect_count": 1784, "@@gene_count": 512, "@@patient_count": 100,
+            "@@body_system_count": 13, "@@medical_test_count": 284,
+            "@@biomarker_count": 196, "@@risk_factor_count": 87,
+            "@@pathway_count": 342, "@@drug_class_count": 48, "@@procedure_count": 213,
+            "@@has_symptom_count": 48291, "@@treats_count": 9814,
+            "@@interacts_count": 4203, "@@associated_count": 2917, "@@comorbid_count": 3156,
         }
 
     def _mock_symptoms(self):

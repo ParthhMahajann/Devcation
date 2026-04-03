@@ -1,7 +1,7 @@
 export default function LoadingSpinner({ message = 'Loading...' }) {
   return (
-    <div className="flex flex-col items-center justify-center py-16 gap-4">
-      <div className="w-10 h-10 border-4 border-sky-500 border-t-transparent rounded-full animate-spin" />
+    <div className="flex flex-col items-center justify-center py-16 gap-4" role="status" aria-label={message}>
+      <div className="w-10 h-10 border-4 border-sky-500 border-t-transparent rounded-full animate-spin" aria-hidden="true" />
       <p className="text-slate-400 text-sm">{message}</p>
     </div>
   )

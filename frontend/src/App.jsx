@@ -5,6 +5,7 @@ import DiagnosePage from './pages/DiagnosePage'
 import DrugInteractionsPage from './pages/DrugInteractionsPage'
 import GraphExplorerPage from './pages/GraphExplorerPage'
 import PatientPage from './pages/PatientPage'
+import ErrorBoundary from './components/common/ErrorBoundary'
 
 export default function App() {
   return (
@@ -12,14 +13,16 @@ export default function App() {
       <div className="min-h-screen bg-slate-900 text-slate-100">
         <Navbar />
         <main className="pt-14">
-          <Routes>
-            <Route path="/"             element={<Dashboard />}           />
-            <Route path="/diagnose"     element={<DiagnosePage />}        />
-            <Route path="/interactions" element={<DrugInteractionsPage />} />
-            <Route path="/explore"      element={<GraphExplorerPage />}   />
-            <Route path="/patients"     element={<PatientPage />}         />
-            <Route path="*"             element={<NotFound />}            />
-          </Routes>
+          <ErrorBoundary>
+            <Routes>
+              <Route path="/"             element={<Dashboard />}           />
+              <Route path="/diagnose"     element={<DiagnosePage />}        />
+              <Route path="/interactions" element={<DrugInteractionsPage />} />
+              <Route path="/explore"      element={<GraphExplorerPage />}   />
+              <Route path="/patients"     element={<PatientPage />}         />
+              <Route path="*"             element={<NotFound />}            />
+            </Routes>
+          </ErrorBoundary>
         </main>
       </div>
     </BrowserRouter>

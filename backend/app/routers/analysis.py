@@ -1,9 +1,11 @@
-from fastapi import APIRouter, Depends, Query
+import logging
+from fastapi import APIRouter, Depends, Query, HTTPException
 from typing import List
 from app.models.schemas import SafetyCheck
 from app.services.tigergraph_service import TigerGraphService
 from app.dependencies import get_tg_service
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -53,17 +55,13 @@ def disease_progression_risk(
 
     result = raw[0] if isinstance(raw, list) else raw
     return {
-        "patient_id":       patient_id,
-        "active_diseases":  result.get("active_diseases", []),
+        "patient_id":         patient_id,
+        "active_diseases":    result.get("active_diseases", []),
         "progression_stages": result.get("all_stages", []),
-        "risk_summary":     result.get("@@risk_summary", {}),
-        "critical_chains":  result.get("@@critical_chains", []),
+        "risk_summary":       result.get("@@risk_summary", {}),
+        "critical_chains":    result.get("@@critical_chains", []),
     }
 
-
-# ── Comorbidity Safety Check (used from graph router via separate analysis router) ──
-# Note: disease comorbidity cluster is exposed under /api/graph/comorbidity/{id}
-# This router handles patient-level analysis.
 
 # ── Pre-Prescription Safety Check ────────────────────────────────────────────
 
@@ -79,6 +77,9 @@ def contraindication_safety_check(
     alerts covering: drug-drug interactions, contraindications, known allergies,
     black-box warnings, pregnancy categories, and pharmacogenomics flags.
     """
+    if not proposed_drugs:
+        raise HTTPException(status_code=422, detail="proposed_drugs must not be empty")
+
     raw = tg.contraindication_safety_check(patient_id, proposed_drugs)
     if not raw:
         return SafetyCheck(patient_id=patient_id)

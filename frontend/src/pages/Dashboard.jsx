@@ -7,14 +7,12 @@ import LoadingSpinner from '../components/common/LoadingSpinner'
 export default function Dashboard() {
   const [stats, setStats] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
 
   useEffect(() => {
     getStats()
       .then(setStats)
-      .catch(() => setStats({
-        disease_count: 5247, symptom_count: 10392, drug_count: 3018,
-        side_effect_count: 1784, gene_count: 512, patient_count: 100,
-      }))
+      .catch((err) => setError(err.message || 'Failed to load graph statistics'))
       .finally(() => setLoading(false))
   }, [])
 
@@ -30,7 +28,15 @@ export default function Dashboard() {
         </p>
       </div>
 
-      {loading ? <LoadingSpinner message="Loading graph statistics..." /> : (
+      {loading && <LoadingSpinner message="Loading graph statistics..." />}
+
+      {error && (
+        <div className="p-4 bg-red-900/20 border border-red-700 rounded-xl text-red-300 text-sm mb-12">
+          Could not load graph statistics: {error}
+        </div>
+      )}
+
+      {!loading && stats && (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-12">
           <StatsCard label="Diseases"    value={stats.disease_count}    icon="🦠" color="red"    />
           <StatsCard label="Symptoms"    value={stats.symptom_count}    icon="🌡️" color="amber"  />

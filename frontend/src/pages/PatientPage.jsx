@@ -30,6 +30,11 @@ export default function PatientPage() {
 
   const handleAdd = async (e) => {
     e.preventDefault()
+    const age = parseInt(form.age)
+    if (isNaN(age) || age < 0 || age > 150) {
+      setError('Age must be a number between 0 and 150')
+      return
+    }
     setLoading(true)
     setError(null)
     setSaved(false)
@@ -139,8 +144,8 @@ export default function PatientPage() {
                   <h3 className="text-sm font-semibold text-red-300 mb-1">
                     ⚠️ {patient.drug_interactions.length} drug interaction{patient.drug_interactions.length !== 1 ? 's' : ''} detected
                   </h3>
-                  {patient.drug_interactions.map((i, idx) => (
-                    <p key={idx} className="text-xs text-red-400">
+                  {patient.drug_interactions.map((i) => (
+                    <p key={`${i.from_drug}-${i.to_drug}`} className="text-xs text-red-400">
                       {i.from_drug} ↔ {i.to_drug}: {i.interaction_type}
                     </p>
                   ))}

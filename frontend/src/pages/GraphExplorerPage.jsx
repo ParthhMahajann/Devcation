@@ -60,6 +60,8 @@ export default function GraphExplorerPage() {
             <button
               key={type}
               onClick={() => toggleType(type)}
+              aria-pressed={activeTypes.has(type)}
+              aria-label={`Toggle ${type} nodes`}
               className={`px-3 py-1 rounded-full text-xs font-medium border transition-all ${
                 activeTypes.has(type) ? 'opacity-100' : 'opacity-30'
               }`}
@@ -82,7 +84,7 @@ export default function GraphExplorerPage() {
         </button>
       </div>
 
-      <div ref={containerRef} className="flex-1 overflow-hidden bg-slate-900">
+      <div ref={containerRef} className="flex-1 overflow-hidden bg-slate-900" aria-label="Medical knowledge graph visualization" role="region">
         {loading && (
           <div className="flex items-center justify-center h-full">
             <LoadingSpinner message="Loading knowledge graph..." />

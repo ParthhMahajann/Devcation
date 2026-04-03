@@ -37,6 +37,7 @@ services:
       timeout: 10s
       retries: 10
       start_period: 90s
+    mem_limit: 4g
     restart: unless-stopped
 
   backend:
@@ -54,10 +55,11 @@ services:
       - TG_GS_PORT=14240
       - TG_USERNAME=tigergraph
       - TG_PASSWORD=tigergraph
-      - TG_GRAPHNAME=MedGraph
+      - TG_GRAPH=MedGraph
     depends_on:
       tigergraph:
         condition: service_healthy
+    mem_limit: 512m
     restart: unless-stopped
 
 volumes:
