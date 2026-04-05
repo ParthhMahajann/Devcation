@@ -36,21 +36,26 @@ export default function GraphVisualization({ data, width = 800, height = 600 }) 
   }
 
   return (
-    <ForceGraph2D
-      ref={fgRef}
-      graphData={data}
-      width={width}
-      height={height}
-      backgroundColor="#0f172a"
-      nodeCanvasObject={paintNode}
-      nodeCanvasObjectMode={() => 'replace'}
-      linkColor={() => '#334155'}
-      linkWidth={1}
-      linkDirectionalArrowLength={3}
-      linkDirectionalArrowRelPos={1}
-      onNodeClick={handleNodeClick}
-      cooldownTicks={100}
-      nodeLabel={node => `${node.type}: ${node.label || node.id}`}
-    />
+    <div
+      role="img"
+      aria-label={`Medical knowledge graph with ${data.nodes.length} nodes and ${data.links.length} edges`}
+    >
+      <ForceGraph2D
+        ref={fgRef}
+        graphData={data}
+        width={width}
+        height={height}
+        backgroundColor="#0f172a"
+        nodeCanvasObject={paintNode}
+        nodeCanvasObjectMode={() => 'replace'}
+        linkColor={() => '#334155'}
+        linkWidth={1}
+        linkDirectionalArrowLength={3}
+        linkDirectionalArrowRelPos={1}
+        onNodeClick={handleNodeClick}
+        cooldownTicks={100}
+        nodeLabel={node => `${node.type}: ${node.label || node.id}`}
+      />
+    </div>
   )
 }

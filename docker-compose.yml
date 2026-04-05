@@ -50,12 +50,10 @@ services:
     env_file:
       - .env
     environment:
+      # Override only values that differ from local dev (TG host inside Docker network)
       - TG_HOST=http://tigergraph
       - TG_RESTPP_PORT=9000
       - TG_GS_PORT=14240
-      - TG_USERNAME=tigergraph
-      - TG_PASSWORD=tigergraph
-      - TG_GRAPH=MedGraph
     depends_on:
       tigergraph:
         condition: service_healthy

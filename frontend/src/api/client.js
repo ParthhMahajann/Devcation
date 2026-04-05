@@ -12,7 +12,12 @@ const client = axios.create({
 client.interceptors.response.use(
   (res) => res,
   (err) => {
-    const detail = err.response?.data?.detail || err.message
+    let detail
+    if (!err.response) {
+      detail = 'Cannot reach the server. Check your connection or try again later.'
+    } else {
+      detail = err.response.data?.detail || err.message
+    }
     const error = new Error(detail)
     error.status = err.response?.status
     return Promise.reject(error)

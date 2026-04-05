@@ -44,7 +44,15 @@ export default function DrugInteractionsPage() {
         </div>
       )}
 
-      {results && !loading && <InteractionAlert interactions={results.interactions} />}
+      {results && !loading && results.interactions.length === 0 && (
+        <div className="text-center py-8 text-slate-500">
+          No known interactions found between the selected drugs.
+        </div>
+      )}
+
+      {results && !loading && results.interactions.length > 0 && (
+        <InteractionAlert interactions={results.interactions} />
+      )}
 
       {!results && !loading && (
         <div className="text-center py-16 text-slate-600">

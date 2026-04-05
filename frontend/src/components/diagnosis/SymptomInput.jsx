@@ -59,10 +59,12 @@ export default function SymptomInput({ onSubmit, loading }) {
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div>
-        <label className="block text-sm font-medium text-slate-300 mb-2">
+        <label htmlFor="symptom-select" className="block text-sm font-medium text-slate-300 mb-2">
           Select your symptoms
         </label>
         <Select
+          inputId="symptom-select"
+          aria-label="Select symptoms"
           isMulti
           options={options}
           value={selected}

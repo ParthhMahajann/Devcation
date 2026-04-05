@@ -37,7 +37,7 @@ export default function Dashboard() {
       )}
 
       {!loading && stats && (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-12">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-12" aria-live="polite" aria-label="Graph statistics">
           <StatsCard label="Diseases"    value={stats.disease_count}    icon="🦠" color="red"    />
           <StatsCard label="Symptoms"    value={stats.symptom_count}    icon="🌡️" color="amber"  />
           <StatsCard label="Drugs"       value={stats.drug_count}       icon="💊" color="sky"    />

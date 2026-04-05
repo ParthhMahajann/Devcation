@@ -45,23 +45,31 @@ def check_interactions(
 
 
 @router.get("/list")
-def list_drugs(tg: TigerGraphService = Depends(get_tg_service)):
-    drugs = tg.list_drugs()
-    result = []
-    for d in drugs:
-        attrs = d.get("attributes", {})
-        result.append({
-            "drug_id": d.get("v_id", ""),
-            "name": attrs.get("name", ""),
-            "drug_class": attrs.get("drug_class", ""),
-            "approval_status": attrs.get("approval_status", ""),
-            "generic_name": attrs.get("generic_name", ""),
-        })
-    return {"drugs": result, "total": len(result)}
+@limiter.limit("60/minute")
+def list_drugs(request: Request, tg: TigerGraphService = Depends(get_tg_service)):
+    try:
+        drugs = tg.list_drugs()
+        result = []
+        for d in drugs:
+            attrs = d.get("attributes", {})
+            result.append({
+                "drug_id": d.get("v_id", ""),
+                "name": attrs.get("name", ""),
+                "drug_class": attrs.get("drug_class", ""),
+                "approval_status": attrs.get("approval_status", ""),
+                "generic_name": attrs.get("generic_name", ""),
+            })
+        return {"drugs": result, "total": len(result)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("list_drugs failed: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to fetch drugs")
 
 
 @router.get("/{drug_id}")
-def get_drug(drug_id: str, tg: TigerGraphService = Depends(get_tg_service)):
+@limiter.limit("60/minute")
+def get_drug(request: Request, drug_id: str, tg: TigerGraphService = Depends(get_tg_service)):
     if not tg.conn:
         raise HTTPException(status_code=503, detail="Database unavailable")
     try:

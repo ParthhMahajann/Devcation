@@ -41,10 +41,12 @@ export default function DrugSearch({ onSubmit, loading }) {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      <label className="block text-sm font-medium text-slate-300 mb-2">
+      <label htmlFor="drug-select" className="block text-sm font-medium text-slate-300 mb-2">
         Select medications to check (minimum 2)
       </label>
       <Select
+        inputId="drug-select"
+        aria-label="Select drugs"
         isMulti options={options} value={selected} onChange={setSelected}
         styles={selectStyles} placeholder="Search drugs..."
       />

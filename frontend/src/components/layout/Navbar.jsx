@@ -17,12 +17,14 @@ export default function Navbar() {
           <span className="text-sky-400">🧠</span>
           <span>MedGraph <span className="text-sky-400">AI</span></span>
         </Link>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1" role="list">
           {NAV_LINKS.map(({ to, label }) => (
             <Link
               key={to}
               to={to}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+              role="listitem"
+              aria-current={pathname === to ? 'page' : undefined}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${
                 pathname === to
                   ? 'bg-sky-600 text-white'
                   : 'text-slate-400 hover:text-white hover:bg-slate-700'

@@ -1,5 +1,5 @@
 import logging
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from app.models.schemas import DiagnoseRequest, DiagnoseResponse, DiseaseResult
 from app.services.tigergraph_service import TigerGraphService
 from app.dependencies import get_tg_service
@@ -32,15 +32,22 @@ def diagnose(request: Request, body: DiagnoseRequest, tg: TigerGraphService = De
 
 
 @router.get("/list")
-def list_symptoms(tg: TigerGraphService = Depends(get_tg_service)):
-    symptoms = tg.list_symptoms()
-    result = []
-    for s in symptoms:
-        attrs = s.get("attributes", {})
-        result.append({
-            "symptom_id": s.get("v_id", ""),
-            "name": attrs.get("name", ""),
-            "body_system": attrs.get("body_system", ""),
-            "severity_weight": attrs.get("severity_weight", 0.5),
-        })
-    return {"symptoms": result, "total": len(result)}
+@limiter.limit("60/minute")
+def list_symptoms(request: Request, tg: TigerGraphService = Depends(get_tg_service)):
+    try:
+        symptoms = tg.list_symptoms()
+        result = []
+        for s in symptoms:
+            attrs = s.get("attributes", {})
+            result.append({
+                "symptom_id": s.get("v_id", ""),
+                "name": attrs.get("name", ""),
+                "body_system": attrs.get("body_system", ""),
+                "severity_weight": attrs.get("severity_weight", 0.5),
+            })
+        return {"symptoms": result, "total": len(result)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("list_symptoms failed: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to fetch symptoms")

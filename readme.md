@@ -161,9 +161,28 @@ Devcation/
 
 - Node.js 18+
 - Python 3.11+
-- Access to a TigerGraph instance
+- Access to a TigerGraph instance (or Docker — see below)
 
-### Frontend
+### Quick Start with Docker
+
+```bash
+cp .env.example .env           # fill in TG credentials + MEDGRAPH_API_KEY
+docker compose up -d           # starts TigerGraph + FastAPI
+# wait ~90s for TigerGraph to initialise, then:
+python tigergraph/setup.py     # create schema + install queries
+python tigergraph/seed_data.py # load sample data
+```
+
+Frontend (separate terminal):
+```bash
+cd frontend && npm install
+cp .env.example .env           # set VITE_API_URL and VITE_API_KEY
+npm run dev                    # http://localhost:5173
+```
+
+### Manual Setup
+
+#### Frontend
 
 ```bash
 cd frontend
@@ -172,21 +191,64 @@ cp .env.example .env        # Set VITE_API_URL=http://localhost:8000
 npm run dev                 # Runs on http://localhost:5173
 ```
 
-### Backend
+#### Backend
 
 ```bash
 cd backend
 pip install -r requirements.txt
-cp .env.example .env        # Set TG_HOST, TG_USER, TG_PASSWORD, TG_GRAPH, TG_TOKEN
+cp .env.example .env        # Set TG_HOST, TG_USERNAME, TG_PASSWORD, TG_GRAPH, MEDGRAPH_API_KEY
 uvicorn app.main:app --reload   # Runs on http://localhost:8000
 ```
 
-### TigerGraph
+#### TigerGraph
 
-1. Create a graph named `ArogyaAI` on your TigerGraph instance
+1. Create a graph named `MedGraph` on your TigerGraph instance
 2. Run the GSQL schema creation scripts from `ARCHITECTURE.md`
 3. Load CSV data from `data/processed/` using the provided loading jobs
 4. Install the GSQL queries
+
+---
+
+## 🔐 Authentication
+
+All API endpoints require an `X-API-Key` header.
+
+**Set the key in `.env`:**
+```
+MEDGRAPH_API_KEY=your-secret-key-here
+```
+
+**Pass it in requests:**
+```bash
+curl -H "X-API-Key: your-secret-key-here" http://localhost:8000/api/graph/stats
+```
+
+The frontend reads the key from `VITE_API_KEY` in `frontend/.env` and sends it automatically.
+
+> For local development the default key is `dev-insecure-key-change-me`. **Change this before any public deployment.**
+
+---
+
+## 🛠️ Troubleshooting
+
+**TigerGraph won't connect**
+- Check `TG_HOST`, `TG_USERNAME`, `TG_PASSWORD`, `TG_GRAPH` in `.env`
+- Ensure the graph name matches exactly (default: `MedGraph`)
+- Docker users: wait the full 90s start period before running setup scripts
+- Check logs: `docker compose logs tigergraph`
+
+**"Database unavailable" (503) on all API calls**
+- TigerGraph is not running or the connection details are wrong
+- For local development without TigerGraph, set `USE_MOCK_DATA=true` in `.env` to use demo data
+
+**Frontend shows "Cannot reach the server"**
+- Verify the backend is running on port 8000
+- Check `VITE_API_URL` in `frontend/.env` matches the backend address
+- Ensure `VITE_API_KEY` matches `MEDGRAPH_API_KEY` in the backend `.env`
+
+**Rate limit errors (429)**
+- Sensitive endpoints allow 30 req/min; list endpoints allow 60 req/min
+- If you hit limits during development, wait 60 seconds or restart the backend
 
 ---
 
