@@ -17,6 +17,9 @@ class PatientCreate(BaseModel):
     gender: str = Field(..., pattern=r'^(Male|Female|Other)$')
     blood_type: str = Field(..., max_length=10)
 
+class SafetyCheckRequest(BaseModel):
+    proposed_drugs: List[str] = Field(..., min_length=1, max_length=20)
+
 class GraphExploreRequest(BaseModel):
     center_type: Optional[str] = None
     center_id: Optional[str] = None

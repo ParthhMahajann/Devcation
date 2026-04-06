@@ -7,7 +7,7 @@ logger = logging.getLogger(__name__)
 
 
 def _db_unavailable():
-    """Raise 503 or return False (to signal mock mode)."""
+    """Raise 503 or return True (to signal mock mode)."""
     if get_settings().use_mock_data:
         return True   # caller should use mock data
     raise HTTPException(status_code=503, detail="Database unavailable — TigerGraph is not connected")
@@ -76,6 +76,8 @@ class TigerGraphService:
 
     def find_treatment_path(self, disease_id: str) -> dict:
         if not self.conn:
+            if _db_unavailable():
+                return {}
             return {}
         try:
             return self.conn.runInstalledQuery(
@@ -84,12 +86,14 @@ class TigerGraphService:
             )
         except Exception as e:
             logger.error("find_treatment_path query failed for %s: %s", disease_id, e)
-            return {}
+            raise HTTPException(status_code=500, detail="Treatment path query failed")
 
     # ─── Patient Risk ───────────────────────────────────────────────────────────
 
     def get_patient_risk(self, patient_id: str) -> dict:
         if not self.conn:
+            if _db_unavailable():
+                return self._mock_patient_risk(patient_id)
             return {}
         try:
             return self.conn.runInstalledQuery(
@@ -98,7 +102,7 @@ class TigerGraphService:
             )
         except Exception as e:
             logger.error("patient_risk_profile query failed for %s: %s", patient_id, e)
-            return {}
+            raise HTTPException(status_code=500, detail="Patient risk profile query failed")
 
     # ─── Graph Stats ────────────────────────────────────────────────────────────
 
@@ -123,7 +127,9 @@ class TigerGraphService:
         limit_per_hop: int = 20,
     ) -> dict:
         if not self.conn:
-            return {"nodes": [], "edges": []}
+            if _db_unavailable():
+                return []
+            return []
         try:
             return self.conn.runInstalledQuery(
                 "explore_subgraph",
@@ -142,6 +148,8 @@ class TigerGraphService:
 
     def pharmacogenomics_report(self, patient_id: str) -> dict:
         if not self.conn:
+            if _db_unavailable():
+                return self._mock_pgx(patient_id)
             return {}
         try:
             return self.conn.runInstalledQuery(
@@ -150,12 +158,14 @@ class TigerGraphService:
             )
         except Exception as e:
             logger.error("pharmacogenomics_report query failed for %s: %s", patient_id, e)
-            return {}
+            raise HTTPException(status_code=500, detail="Pharmacogenomics report failed")
 
     # ─── Disease Progression ─────────────────────────────────────────────────────
 
     def disease_progression_risk(self, patient_id: str, max_depth: int = 3) -> dict:
         if not self.conn:
+            if _db_unavailable():
+                return self._mock_progression(patient_id)
             return {}
         try:
             return self.conn.runInstalledQuery(
@@ -164,12 +174,14 @@ class TigerGraphService:
             )
         except Exception as e:
             logger.error("disease_progression_risk query failed for %s: %s", patient_id, e)
-            return {}
+            raise HTTPException(status_code=500, detail="Disease progression query failed")
 
     # ─── Comorbidity Cluster ─────────────────────────────────────────────────────
 
     def comorbidity_cluster(self, disease_id: str, max_hops: int = 2, min_rate: float = 0.1) -> dict:
         if not self.conn:
+            if _db_unavailable():
+                return self._mock_comorbidity(disease_id)
             return {}
         try:
             return self.conn.runInstalledQuery(
@@ -178,12 +190,14 @@ class TigerGraphService:
             )
         except Exception as e:
             logger.error("comorbidity_cluster query failed for %s: %s", disease_id, e)
-            return {}
+            raise HTTPException(status_code=500, detail="Comorbidity cluster query failed")
 
     # ─── Contraindication Safety Check ───────────────────────────────────────────
 
     def contraindication_safety_check(self, patient_id: str, proposed_drugs: list[str]) -> dict:
         if not self.conn:
+            if _db_unavailable():
+                return self._mock_safety_check(patient_id)
             return {}
         try:
             return self.conn.runInstalledQuery(
@@ -192,7 +206,7 @@ class TigerGraphService:
             )
         except Exception as e:
             logger.error("contraindication_safety_check query failed for %s: %s", patient_id, e)
-            return {}
+            raise HTTPException(status_code=500, detail="Safety check query failed")
 
     # ─── List helpers ───────────────────────────────────────────────────────────
 
@@ -222,12 +236,97 @@ class TigerGraphService:
         if not self.conn:
             if _db_unavailable():
                 return {"patient_id": patient_id, "name": "Demo Patient", "age": 45,
-                        "conditions": [], "medications": [], "drug_interactions": []}
+                        "gender": "Male", "blood_type": "O+",
+                        "conditions": [{"name": "Hypertension", "severity": "moderate", "status": "active"}],
+                        "medications": [{"name": "Lisinopril", "dosage": "10mg daily", "start_date": "2025-01-15"}],
+                        "drug_interactions": []}
         try:
             vertices = self.conn.getVerticesById("Patient", patient_id)
             if not vertices:
                 return None
-            return vertices[0]
+
+            vertex = vertices[0]
+            result = {
+                "patient_id": vertex.get("v_id", patient_id),
+                **vertex.get("attributes", {}),
+            }
+
+            # Fetch conditions (DIAGNOSED_WITH → Disease)
+            conditions = []
+            try:
+                diag_edges = self.conn.getEdges("Patient", patient_id, "DIAGNOSED_WITH")
+                for edge in diag_edges:
+                    target_id = edge.get("to_id", "")
+                    edge_attrs = edge.get("attributes", {})
+                    disease_name = target_id
+                    severity = ""
+                    try:
+                        disease_verts = self.conn.getVerticesById("Disease", target_id)
+                        if disease_verts:
+                            disease_name = disease_verts[0].get("attributes", {}).get("name", target_id)
+                            severity = disease_verts[0].get("attributes", {}).get("severity", "")
+                    except Exception:
+                        pass
+                    conditions.append({
+                        "name": disease_name,
+                        "severity": severity,
+                        "status": edge_attrs.get("status", ""),
+                    })
+            except Exception as edge_err:
+                logger.warning("Failed to fetch conditions for %s: %s", patient_id, edge_err)
+            result["conditions"] = conditions
+
+            # Fetch medications (TAKES_DRUG → Drug)
+            medications = []
+            drug_id_to_name = {}
+            try:
+                drug_edges = self.conn.getEdges("Patient", patient_id, "TAKES_DRUG")
+                for edge in drug_edges:
+                    target_id = edge.get("to_id", "")
+                    edge_attrs = edge.get("attributes", {})
+                    drug_name = target_id
+                    try:
+                        drug_verts = self.conn.getVerticesById("Drug", target_id)
+                        if drug_verts:
+                            drug_name = drug_verts[0].get("attributes", {}).get("name", target_id)
+                    except Exception:
+                        pass
+                    drug_id_to_name[target_id] = drug_name
+                    medications.append({
+                        "name": drug_name,
+                        "dosage": edge_attrs.get("dosage", ""),
+                        "start_date": edge_attrs.get("start_date", ""),
+                    })
+            except Exception as edge_err:
+                logger.warning("Failed to fetch medications for %s: %s", patient_id, edge_err)
+            result["medications"] = medications
+
+            # Check drug-drug interactions among current medications
+            drug_interactions = []
+            drug_ids = list(drug_id_to_name.keys())
+            if len(drug_ids) >= 2:
+                try:
+                    checked_pairs = set()
+                    for d1_id in drug_ids:
+                        edges = self.conn.getEdges("Drug", d1_id, "INTERACTS_WITH")
+                        for edge in edges:
+                            d2_id = edge.get("to_id", "")
+                            if d2_id in drug_id_to_name:
+                                pair = tuple(sorted([d1_id, d2_id]))
+                                if pair not in checked_pairs:
+                                    checked_pairs.add(pair)
+                                    edge_attrs = edge.get("attributes", {})
+                                    drug_interactions.append({
+                                        "from_drug": drug_id_to_name[d1_id],
+                                        "to_drug": drug_id_to_name[d2_id],
+                                        "interaction_type": edge_attrs.get("interaction_type", ""),
+                                        "severity": edge_attrs.get("severity", ""),
+                                    })
+                except Exception as edge_err:
+                    logger.warning("Failed to fetch drug interactions for %s: %s", patient_id, edge_err)
+            result["drug_interactions"] = drug_interactions
+
+            return result
         except Exception as e:
             logger.error("get_patient failed for %s: %s", patient_id, e)
             raise HTTPException(status_code=500, detail="Failed to fetch patient data")
@@ -250,17 +349,24 @@ class TigerGraphService:
     # ─── Mock data (dev fallback when USE_MOCK_DATA=true) ────────────────────────
 
     def _mock_diagnose(self, symptoms):
-        return [{"diseases": [
-            {"disease_id": "D001", "name": "Common Cold", "icd_code": "J00", "severity": "mild",
+        return [{"results": [
+            {"disease_id": "D001", "name": "Common Cold", "icd10_code": "J00", "severity": "mild",
              "category": "Respiratory", "description": "Viral upper respiratory infection",
-             "@score": 4.5, "@match_count": 2, "@matched_symptoms": {}},
-            {"disease_id": "D002", "name": "Influenza", "icd_code": "J10", "severity": "moderate",
+             "@direct_score": 4.5, "@indirect_score": 0.0, "@match_count": 2, "@matched_symptoms": {},
+             "@affected_systems": ["Respiratory"]},
+            {"disease_id": "D002", "name": "Influenza", "icd10_code": "J10", "severity": "moderate",
              "category": "Respiratory", "description": "Seasonal flu",
-             "@score": 3.2, "@match_count": 2, "@matched_symptoms": {}},
+             "@direct_score": 3.2, "@indirect_score": 0.0, "@match_count": 2, "@matched_symptoms": {},
+             "@affected_systems": ["Respiratory"]},
         ]}]
 
     def _mock_interactions(self, drug_names):
-        return [{"all_drugs": [], "@@interaction_edges": []}]
+        mock_drugs = [
+            {"drug_id": f"DR{i+1:03d}", "name": name, "drug_class": "NSAID", "approval_status": "approved",
+             "generic_name": name}
+            for i, name in enumerate(drug_names)
+        ]
+        return [{"all_input": mock_drugs, "@@interaction_edges": []}]
 
     def _mock_stats(self):
         return {
@@ -272,6 +378,28 @@ class TigerGraphService:
             "@@has_symptom_count": 48291, "@@treats_count": 9814,
             "@@interacts_count": 4203, "@@associated_count": 2917, "@@comorbid_count": 3156,
         }
+
+    def _mock_patient_risk(self, patient_id):
+        return [{"risk_score": 0.35, "risk_factors": ["Hypertension", "Age > 40"],
+                 "high_risk_drugs": [], "recommendations": ["Regular BP monitoring"]}]
+
+    def _mock_pgx(self, patient_id):
+        return [{"@@high_risk_drugs": [], "@@patient_phenotypes": [],
+                 "@@pgx_matrix": {}, "drugs": [], "at_risk_genes": [],
+                 "patient_variants": []}]
+
+    def _mock_progression(self, patient_id):
+        return [{"active_diseases": [], "all_stages": [],
+                 "@@risk_summary": {}, "@@critical_chains": []}]
+
+    def _mock_comorbidity(self, disease_id):
+        return [{"start": [], "cluster": [], "cluster_risk_factors": [],
+                 "cluster_systems": [], "cluster_drugs": [], "@@top_comorbidities": {}}]
+
+    def _mock_safety_check(self, patient_id):
+        return [{"@@critical_count": 0, "@@major_count": 0,
+                 "@@critical_alerts": [], "@@major_alerts": [],
+                 "@@moderate_alerts": [], "@@info_alerts": []}]
 
     def _mock_symptoms(self):
         return [

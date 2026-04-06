@@ -12,10 +12,16 @@ router = APIRouter()
 @router.get("/{patient_id}")
 @limiter.limit("30/minute")
 def get_patient(request: Request, patient_id: str, tg: TigerGraphService = Depends(get_tg_service)):
-    raw = tg.get_patient(patient_id)
-    if not raw:
-        raise HTTPException(status_code=404, detail=f"Patient {patient_id!r} not found")
-    return raw
+    try:
+        raw = tg.get_patient(patient_id)
+        if not raw:
+            raise HTTPException(status_code=404, detail=f"Patient {patient_id!r} not found")
+        return raw
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("get_patient failed for %s: %s", patient_id, e)
+        raise HTTPException(status_code=500, detail="Failed to fetch patient data")
 
 
 @router.get("/{patient_id}/risk")

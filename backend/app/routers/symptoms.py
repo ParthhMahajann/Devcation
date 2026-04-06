@@ -12,23 +12,31 @@ router = APIRouter()
 @router.post("/diagnose", response_model=DiagnoseResponse)
 @limiter.limit("30/minute")
 def diagnose(request: Request, body: DiagnoseRequest, tg: TigerGraphService = Depends(get_tg_service)):
-    raw = tg.diagnose(body.symptoms)
-    diseases = []
-    if raw and len(raw) > 0:
-        raw_diseases = raw[0].get("diseases", [])
-        for d in raw_diseases:
-            diseases.append(DiseaseResult(
-                disease_id=d.get("disease_id", d.get("v_id", "")),
-                name=d.get("name", ""),
-                icd_code=d.get("icd_code"),
-                severity=d.get("severity"),
-                category=d.get("category"),
-                description=d.get("description"),
-                score=d.get("@score", 0.0),
-                match_count=d.get("@match_count", 0),
-                matched_symptoms=d.get("@matched_symptoms", {}),
-            ))
-    return DiagnoseResponse(diseases=diseases, total=len(diseases))
+    try:
+        raw = tg.diagnose(body.symptoms)
+        diseases = []
+        if raw and len(raw) > 0:
+            # GSQL query prints variable named "results", so key is "results"
+            raw_diseases = raw[0].get("results", raw[0].get("diseases", []))
+            for d in raw_diseases:
+                attrs = d.get("attributes", d)
+                diseases.append(DiseaseResult(
+                    disease_id=attrs.get("disease_id", d.get("v_id", "")),
+                    name=attrs.get("name", ""),
+                    icd_code=attrs.get("icd10_code", attrs.get("icd_code")),
+                    severity=attrs.get("severity"),
+                    category=attrs.get("category"),
+                    description=attrs.get("description"),
+                    score=attrs.get("@direct_score", 0.0) + attrs.get("@indirect_score", 0.0),
+                    match_count=attrs.get("@match_count", 0),
+                    matched_symptoms=attrs.get("@matched_symptoms", {}),
+                ))
+        return DiagnoseResponse(diseases=diseases, total=len(diseases))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("diagnose failed: %s", e)
+        raise HTTPException(status_code=500, detail="Diagnosis failed")
 
 
 @router.get("/list")
