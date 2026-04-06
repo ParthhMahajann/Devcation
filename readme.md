@@ -6,7 +6,7 @@
 ![Built With](https://img.shields.io/badge/built%20with-React%20%7C%20FastAPI%20%7C%20TigerGraph-green)
 ![Hackathon](https://img.shields.io/badge/hackathon-Devcation-purple)
 
----
+----
 
 ## 🚀 What is Arogya AI?
 
